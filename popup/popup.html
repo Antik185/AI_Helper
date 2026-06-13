@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-i18n="extName"></title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body data-theme="dark">
+<div class="popup">
+
+  <!-- ============ HEADER ============ -->
+  <div class="pp-head">
+    <div class="pp-logo" aria-hidden="true">
+      <img src="../icons/icon-128.png" alt="">
+    </div>
+    <div class="pp-title-wrap">
+      <div class="pp-title">Translate Helper</div>
+      <div class="pp-sub" data-i18n="popupSub"></div>
+    </div>
+    <div class="head-actions">
+      <select id="uiLang" class="lang-toggle" data-i18n-title="uiLangLabel"></select>
+      <button class="theme-toggle" id="themeToggle" type="button" data-i18n-title="themeTitle">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none"></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ BODY ============ -->
+  <div class="pp-body">
+
+    <!-- Провайдер -->
+    <div class="field">
+      <span class="field-label">
+        <span class="dot"></span>
+        <span data-i18n="providerLabel"></span>
+        <span class="badge-free" id="freeBadge" hidden>FREE</span>
+      </span>
+      <div class="select">
+        <select id="provider">
+          <option value="google"     data-i18n="providerGoogle"></option>
+          <option value="chatgpt"    data-i18n="providerChatGPT"></option>
+          <option value="gemini"     data-i18n="providerGemini"></option>
+          <option value="openrouter" data-i18n="providerOpenRouter"></option>
+          <option value="mymemory"   data-i18n="providerMyMemory"></option>
+          <option value="deepl"      data-i18n="providerDeepL"></option>
+          <option value="libre"      data-i18n="providerLibre"></option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Поля для ChatGPT -->
+    <div id="chatgpt-fields" class="provider-fields" hidden>
+      <div class="field">
+        <span class="field-label" data-i18n="chatgptModelLabel"></span>
+        <div class="select">
+          <select id="chatgptModel">
+            <option value="auto">Auto (default)</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4o-mini">GPT-4o Mini</option>
+            <option value="o4-mini">o4-mini</option>
+          </select>
+        </div>
+      </div>
+      <small class="hint-inline" data-i18n="chatgptHint"></small>
+    </div>
+
+    <!-- Поля для Gemini -->
+    <div id="gemini-fields" class="provider-fields" hidden>
+      <div class="field">
+        <span class="field-label" data-i18n="geminiKeyLabel"></span>
+        <input id="geminiKey" class="text-field" type="password" placeholder="AIza...">
+      </div>
+      <div class="field">
+        <span class="field-label" data-i18n="geminiModelLabel"></span>
+        <input id="geminiModel" class="text-field" type="text" placeholder="gemini-2.0-flash">
+      </div>
+    </div>
+
+    <!-- Поля для OpenRouter -->
+    <div id="openrouter-fields" class="provider-fields" hidden>
+      <div class="field">
+        <span class="field-label" data-i18n="openrouterKeyLabel"></span>
+        <input id="openrouterKey" class="text-field" type="text" autocomplete="off" data-i18n-placeholder="openrouterKeyPlaceholder">
+        <small class="hint-inline" data-i18n="openrouterKeyHint"></small>
+      </div>
+      <div class="field">
+        <span class="field-label" data-i18n="openrouterModelLabel"></span>
+        <div class="select">
+          <select id="openrouterModel">
+            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Поля для DeepL -->
+    <div id="deepl-fields" class="provider-fields" hidden>
+      <div class="field">
+        <span class="field-label" data-i18n="deeplKeyLabel"></span>
+        <input id="deeplKey" class="text-field" type="password" placeholder="xxxx-xxxx-...">
+      </div>
+    </div>
+
+    <!-- Поля для LibreTranslate -->
+    <div id="libre-fields" class="provider-fields" hidden>
+      <div class="field">
+        <span class="field-label" data-i18n="libreUrlLabel"></span>
+        <input id="libreUrl" class="text-field" type="url" placeholder="https://libretranslate.de">
+      </div>
+      <div class="field">
+        <span class="field-label" data-i18n="libreKeyLabel"></span>
+        <input id="libreKey" class="text-field" type="password">
+      </div>
+    </div>
+
+    <!-- Поля для MyMemory -->
+    <div id="mymemory-fields" class="provider-fields" hidden>
+      <div class="field">
+        <span class="field-label" data-i18n="mymemoryEmailLabel"></span>
+        <input id="myMemoryEmail" class="text-field" type="email" placeholder="you@example.com">
+      </div>
+    </div>
+
+    <!-- AI-чат на страницах -->
+    <div class="field">
+      <span class="field-label">
+        <span class="dot"></span>
+        <span data-i18n="aiChatProviderLabel"></span>
+      </span>
+      <div class="select">
+        <select id="aiChatProvider">
+          <option value="openrouter" data-i18n="aiChatProviderOpenRouter"></option>
+          <option value="chatgpt" data-i18n="aiChatProviderChatGPT"></option>
+        </select>
+      </div>
+      <small class="hint-inline" data-i18n="aiChatProviderHint"></small>
+    </div>
+
+    <!-- Язык входящих -->
+    <div class="field">
+      <span class="field-label">
+        <span class="dot"></span>
+        <span data-i18n="incomingLabel"></span>
+      </span>
+      <div class="select">
+        <select id="targetLang"></select>
+      </div>
+    </div>
+
+    <!-- Карточка: исходящие -->
+    <div class="card">
+      <div class="card-head">
+        <span class="chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 20h4l10.5-10.5a2 2 0 000-2.8l-1.2-1.2a2 2 0 00-2.8 0L4 16v4z"
+                  stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span data-i18n="outgoingGroupLabel"></span>
+      </div>
+      <div class="lang-pair">
+        <div class="field">
+          <span class="field-label" data-i18n="outgoingSourceLabel"></span>
+          <div class="select">
+            <select id="outboundSourceLang"></select>
+          </div>
+        </div>
+        <button class="swap" id="swapBtn" type="button" data-i18n-title="swapTitle">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M7 7h11m0 0l-3-3m3 3l-3 3M17 17H6m0 0l3-3m-3 3l3 3"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div class="field">
+          <span class="field-label" data-i18n="outgoingTargetLabel"></span>
+          <div class="select">
+            <select id="outboundTargetLang"></select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Кнопка сохранения -->
+    <button class="pp-save" id="save" type="button">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="save-text" data-i18n="saveButton"></span>
+    </button>
+
+    <!-- Подсказка -->
+    <div class="pp-hint">
+      <span class="ico" aria-hidden="true">
+        <svg viewBox="0 0 40 40" fill="none">
+          <path d="M6 11a5 5 0 015-5h9a5 5 0 015 5v6a5 5 0 01-5 5h-5l-5 4v-4a5 5 0 01-4-4.9z" fill="currentColor" opacity="0.8"/>
+          <path d="M34 19a5 5 0 00-5-5h-7a5 5 0 00-5 5v4a5 5 0 005 5h5l5 4v-4.2A5 5 0 0034 23z" fill="currentColor" opacity="0.45"/>
+        </svg>
+      </span>
+      <span class="hint-text" data-i18n="usageHint"></span>
+    </div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

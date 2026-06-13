@@ -1,0 +1,192 @@
+/* Universal styles for the translate button on all sites.
+   Uses a neutral dark theme that blends with most websites.
+   Adapts to light mode via prefers-color-scheme. */
+
+.dth-input-wrap {
+  position: fixed;
+  z-index: 2147483647; /* Max z-index — stay above everything */
+  display: flex;
+  align-items: stretch;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px) scale(0.96);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.dth-input-wrap.dth-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+/* Main button (left half) — gradient for premium look */
+.dth-input-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  border-radius: 999px 0 0 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: filter 0.15s ease, transform 0.1s ease;
+  letter-spacing: 0.02em;
+}
+
+.dth-input-btn:hover:not(:disabled) {
+  filter: brightness(1.12);
+  transform: scale(1.02);
+}
+
+.dth-input-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.dth-input-btn:disabled {
+  cursor: wait;
+  opacity: 0.8;
+}
+
+/* Arrow button (right half) */
+.dth-input-arrow {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0 999px 999px 0;
+  padding: 6px 9px 6px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter 0.15s ease;
+}
+
+.dth-input-arrow:hover {
+  filter: brightness(1.12);
+}
+
+/* Language dropdown */
+.dth-lang-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #1e1e2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  max-height: 300px;
+  overflow-y: auto;
+  min-width: 210px;
+  padding: 6px;
+  display: none;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dth-lang-dropdown.dth-open {
+  display: block;
+  animation: dth-dropdown-in 0.15s ease-out;
+}
+
+@keyframes dth-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dth-lang-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: #e2e2e8;
+  border: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s ease;
+}
+
+.dth-lang-item:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+
+.dth-lang-code {
+  font-weight: 700;
+  color: #c4b5fd;
+  margin-right: 10px;
+  min-width: 28px;
+  display: inline-block;
+}
+
+.dth-lang-name {
+  color: #9ca3af;
+}
+
+/* Scrollbar styling for the dropdown */
+.dth-lang-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dth-lang-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dth-lang-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.dth-lang-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* --- Light theme adaptation --- */
+@media (prefers-color-scheme: light) {
+  .dth-input-wrap {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+
+  .dth-lang-dropdown {
+    background: #ffffff;
+    border-color: #e5e7eb;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  }
+
+  .dth-lang-item {
+    color: #1f2937;
+  }
+
+  .dth-lang-item:hover {
+    background: rgba(99, 102, 241, 0.08);
+  }
+
+  .dth-lang-code {
+    color: #6366f1;
+  }
+
+  .dth-lang-name {
+    color: #6b7280;
+  }
+
+  .dth-lang-dropdown::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .dth-lang-dropdown::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+  }
+}

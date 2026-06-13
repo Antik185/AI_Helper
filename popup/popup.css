@@ -1,0 +1,333 @@
+/* ============================================================
+   Discord Translate Helper — попап
+   Палитра вокруг бренда: фиолетовый акцент, тёмно-синий корпус.
+   Две темы через CSS-переменные на body[data-theme].
+   ============================================================ */
+
+:root {
+  --brand-500: #6C5CE7;
+  --brand-400: #7C6CF5;
+  --brand-600: #5B4BD6;
+  --brand-glow: rgba(108, 92, 231, 0.45);
+}
+
+body[data-theme="dark"] {
+  --bg:            #0E0E1A;
+  --surface:       #181826;
+  --surface-2:     #1F1F30;
+  --surface-hover: #26263A;
+  --border:        #2C2C42;
+  --border-soft:   #232336;
+  --text:          #ECECF5;
+  --text-dim:      #A2A2BE;
+  --text-faint:    #6E6E8A;
+  --field-bg:      #14141F;
+  --shadow:        0 24px 60px -20px rgba(0,0,0,0.7);
+}
+
+body[data-theme="light"] {
+  --bg:            #F4F5FB;
+  --surface:       #FFFFFF;
+  --surface-2:     #F7F7FC;
+  --surface-hover: #EFEFF7;
+  --border:        #E2E2EE;
+  --border-soft:   #ECECF4;
+  --text:          #16162A;
+  --text-dim:      #5A5A78;
+  --text-faint:    #9494AE;
+  --field-bg:      #FAFAFE;
+  --shadow:        0 24px 60px -24px rgba(40,30,90,0.22);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Без этого .provider-fields { display: flex } затирает hidden-атрибут
+   и поля для DeepL/Gemini/etc. остаются видны при смене провайдера. */
+[hidden] { display: none !important; }
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+  background: transparent;
+  color: var(--text);
+}
+
+body {
+  width: 360px;
+  background: var(--bg);
+  transition: background .25s ease, color .25s ease;
+}
+
+.popup {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  transition: background .25s ease, border-color .25s ease, color .25s ease;
+}
+
+/* ============ HEADER ============ */
+.pp-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 18px 16px;
+  background:
+    linear-gradient(180deg, rgba(108,92,231,0.10), transparent),
+    var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.pp-logo {
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px -4px var(--brand-glow);
+  display: grid; place-items: center;
+  overflow: hidden;
+}
+.pp-logo img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pp-title-wrap { flex: 1; min-width: 0; line-height: 1.2; }
+.pp-title {
+  font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+}
+.pp-sub {
+  font-size: 11px; color: var(--text-faint); margin-top: 2px;
+}
+
+.head-actions {
+  display: flex; gap: 6px; flex-shrink: 0; align-items: center;
+}
+
+/* Селект языка интерфейса в шапке — компактный, чтобы выглядел как кнопка */
+.lang-toggle {
+  appearance: none;
+  height: 32px;
+  max-width: 100px;
+  padding: 0 22px 0 9px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.02em;
+  font-family: inherit;
+  text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
+  background-position:
+    calc(100% - 11px) 13px,
+    calc(100% - 7px) 13px;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  transition: background-color .15s, color .15s, transform .15s, border-color .15s;
+}
+.lang-toggle:hover {
+  background-color: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--brand-500);
+}
+.lang-toggle:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
+.theme-toggle {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: background .15s, color .15s, transform .15s;
+}
+.theme-toggle:hover { background: var(--surface-hover); color: var(--text); }
+.theme-toggle:active { transform: scale(0.92); }
+.theme-toggle svg { width: 17px; height: 17px; }
+
+/* ============ BODY ============ */
+.pp-body {
+  padding: 18px;
+  display: flex; flex-direction: column;
+  gap: 16px;
+}
+
+.field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+
+.field-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--text-dim);
+  display: flex; align-items: center; gap: 6px;
+}
+.field-label .dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--brand-500);
+}
+
+/* Кастомный select со стрелочкой */
+.select { position: relative; width: 100%; }
+.select select {
+  appearance: none;
+  width: 100%;
+  padding: 11px 38px 11px 13px;
+  font-family: inherit;
+  font-size: 13px; font-weight: 500;
+  color: var(--text);
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.select select:hover { border-color: var(--brand-500); }
+.select select:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+.select::after {
+  content: "";
+  position: absolute; right: 14px; top: 50%;
+  width: 8px; height: 8px;
+  border-right: 2px solid var(--text-faint);
+  border-bottom: 2px solid var(--text-faint);
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* Текстовые поля (API-ключи, URL, email) */
+.text-field {
+  width: 100%;
+  padding: 11px 13px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.text-field::placeholder { color: var(--text-faint); }
+.text-field:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
+.hint-inline {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Группа полей провайдера — лёгкая визуальная связка */
+.provider-fields {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  margin-top: -6px;
+}
+
+/* Карточка "исходящие сообщения" */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  padding: 15px 14px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.card-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text);
+}
+.card-head .chip {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 6px;
+  background: linear-gradient(150deg, var(--brand-400), var(--brand-600));
+  color: #fff;
+  flex-shrink: 0;
+}
+.card-head .chip svg { width: 12px; height: 12px; }
+
+/* Пара языков со свапом */
+.lang-pair { display: flex; align-items: flex-end; gap: 10px; }
+.lang-pair .field { flex: 1; min-width: 0; }
+
+.swap {
+  flex-shrink: 0;
+  width: 34px; height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  color: var(--brand-400);
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: background .15s, transform .35s, color .15s;
+}
+.swap:hover { background: var(--surface-hover); }
+.swap:active { transform: rotate(180deg); }
+.swap svg { width: 16px; height: 16px; }
+
+/* Кнопка Save */
+.pp-save {
+  width: 100%;
+  padding: 13px;
+  font-family: inherit;
+  font-size: 14px; font-weight: 600;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--brand-400), var(--brand-600));
+  box-shadow: 0 8px 22px -8px var(--brand-glow);
+  transition: transform .12s, box-shadow .2s, filter .15s, background .25s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.pp-save:hover { filter: brightness(1.07); box-shadow: 0 10px 28px -8px var(--brand-glow); }
+.pp-save:active { transform: translateY(1px) scale(0.99); }
+.pp-save svg { width: 16px; height: 16px; }
+.pp-save.saved {
+  background: linear-gradient(135deg, #2ec27e, #25a36a);
+  box-shadow: 0 8px 22px -8px rgba(46,194,126,0.5);
+}
+
+/* Подсказка снизу */
+.pp-hint {
+  padding: 12px 13px;
+  font-size: 11.5px; line-height: 1.5;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  display: flex; gap: 10px;
+}
+.pp-hint .ico {
+  flex-shrink: 0; color: var(--brand-400);
+  margin-top: 1px;
+}
+.pp-hint .ico svg { width: 18px; height: 18px; }
+
+/* Бейдж FREE рядом с провайдером */
+.badge-free {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em;
+  color: #2ec27e;
+  background: rgba(46,194,126,0.12);
+  border: 1px solid rgba(46,194,126,0.3);
+  padding: 1px 6px; border-radius: 5px;
+  margin-left: auto; text-transform: uppercase;
+}
+body[data-theme="light"] .badge-free {
+  background: rgba(46,194,126,0.18);
+}

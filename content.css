@@ -1,0 +1,160 @@
+/* Стили для UI расширения внутри Discord. */
+
+.dth-container {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.dth-translate-btn {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--text-muted, #b5bac1);
+  border: 1px solid var(--background-modifier-accent, #3f4147);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.4;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.dth-translate-btn:hover {
+  background: var(--background-modifier-hover, rgba(78, 80, 88, 0.4));
+  color: var(--interactive-active, #f2f3f5);
+}
+
+.dth-translation {
+  padding: 6px 10px;
+  border-left: 3px solid var(--brand-experiment, #5865f2);
+  background: var(--background-secondary, rgba(0, 0, 0, 0.2));
+  border-radius: 0 6px 6px 0;
+  color: var(--text-normal, #dbdee1);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.dth-lang {
+  color: var(--text-muted, #949ba4);
+  font-size: 11px;
+  margin-right: 6px;
+}
+
+/* Обёртка с кнопкой перевода + стрелкой выбора языка.
+   Положение пересчитывается из JS относительно поля ввода Discord. */
+.dth-input-wrap {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  align-items: stretch;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  border-radius: 999px;
+  /* Плавное появление при наборе */
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px) scale(0.96);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.dth-input-wrap.dth-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+/* Основная кнопка (левая половина) */
+.dth-input-btn {
+  background: var(--brand-experiment, #5865f2);
+  color: #fff;
+  border: none;
+  border-radius: 999px 0 0 999px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: filter 0.1s ease;
+}
+
+.dth-input-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.dth-input-btn:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+/* Кнопка-стрелка (правая половина) — открывает выпадашку с языками */
+.dth-input-arrow {
+  background: var(--brand-experiment, #5865f2);
+  color: #fff;
+  border: none;
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 0 999px 999px 0;
+  padding: 5px 8px 5px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter 0.1s ease;
+}
+
+.dth-input-arrow:hover {
+  filter: brightness(1.08);
+}
+
+/* Выпадашка с языками — появляется под кнопкой */
+.dth-lang-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--background-floating, #18191c);
+  border: 1px solid var(--background-tertiary, #2b2d31);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  max-height: 280px;
+  overflow-y: auto;
+  min-width: 200px;
+  padding: 4px;
+  display: none;
+}
+
+.dth-lang-dropdown.dth-open {
+  display: block;
+}
+
+.dth-lang-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text-normal, #dbdee1);
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dth-lang-item:hover {
+  background: var(--background-modifier-hover, rgba(78, 80, 88, 0.4));
+}
+
+.dth-lang-code {
+  font-weight: 700;
+  color: var(--text-normal, #f2f3f5);
+  margin-right: 10px;
+  min-width: 26px;
+  display: inline-block;
+}
+
+.dth-lang-name {
+  color: var(--text-muted, #949ba4);
+}

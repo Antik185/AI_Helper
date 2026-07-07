@@ -75,6 +75,23 @@ The AI chat can use page context, so it is intended for prompts like:
 - "Summarize the selected text."
 - "Explain what this product page is saying."
 
+#### Use Your ChatGPT Subscription
+
+AI Chat Beta can also work through your existing ChatGPT subscription instead of paid API requests.
+
+Recommended setup:
+
+1. Log in at `https://chatgpt.com/` in the same Chrome profile where the extension is installed.
+2. Open a normal ChatGPT chat page with the message input visible.
+3. Open the AI Helper popup.
+4. Turn on `AI Chat`.
+5. Select `ChatGPT` as the AI chat provider.
+6. Enable `1px mode` in the extension when using the ChatGPT provider.
+7. Keep the ChatGPT tab open. In `1px mode`, the ChatGPT page is moved into a tiny hidden browser window behind your main browser, so the extension can send prompts through your logged-in ChatGPT session.
+8. Return to the website you want to analyze and use the floating AI button.
+
+This mode is useful if you already pay for ChatGPT and do not want every request to go through paid API providers. It depends on the ChatGPT web interface, so if ChatGPT changes its page layout, reload the ChatGPT tab and the target website first. If it still stops working, update the extension.
+
 ## Notes For Public Builds
 
 The public extension source code does not contain a shared API key. `OpenRouter Free` uses the user's OpenRouter API key and routes requests to free models.
@@ -159,6 +176,23 @@ AI-чат может учитывать контекст страницы, по�
 - "Подбери лучший вариант из тех, что есть на странице."
 - "Кратко перескажи выделенный текст."
 - "Объясни, что написано на этой странице товара."
+
+#### Использование подписки ChatGPT
+
+AI-чат Beta может работать через твою обычную подписку ChatGPT вместо платных API-запросов.
+
+Рекомендуемая настройка:
+
+1. Войди на `https://chatgpt.com/` в том же профиле Chrome, где установлено расширение.
+2. Открой обычный чат ChatGPT, чтобы было видно поле ввода сообщения.
+3. Открой popup AI Helper.
+4. Включи `AI Chat`.
+5. Выбери `ChatGPT` как провайдера AI-чата.
+6. Включи `1px mode` в расширении для режима ChatGPT.
+7. Не закрывай вкладку ChatGPT. В `1px mode` страница ChatGPT прячется в маленькое окно размером почти в 1 пиксель под основным браузером, а расширение отправляет запросы через твою залогиненную сессию ChatGPT.
+8. Вернись на сайт, который хочешь анализировать, и используй плавающую AI-кнопку.
+
+Такой режим удобен, если у тебя уже есть подписка ChatGPT и ты не хочешь тратить платные API-запросы. Он зависит от веб-интерфейса ChatGPT, поэтому если ChatGPT изменит разметку страницы, сначала обнови вкладку ChatGPT и нужный сайт. Если после этого режим не работает, нужно обновить расширение.
 
 ## Важно для публичной сборки
 

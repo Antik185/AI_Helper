@@ -152,6 +152,12 @@ function showProviderFields(provider) {
   document.getElementById('freeBadge').hidden = !FREE_PROVIDERS.has(provider);
 }
 
+function showAiChatTools() {
+  const provider = document.getElementById('aiChatProvider').value;
+  const tools = document.getElementById('chatgpt-ai-tools');
+  if (tools) tools.hidden = provider !== 'chatgpt';
+}
+
 function setControlDisabled(id, disabled) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -169,6 +175,25 @@ function showFeatureStates() {
     'geminiModel', 'openrouterKey', 'openrouterModel', 'chatgptModel', 'swapBtn'
   ].forEach(id => setControlDisabled(id, translationOff));
   setControlDisabled('aiChatProvider', aiChatOff);
+  setControlDisabled('setupChatgptWindow', aiChatOff);
+}
+
+async function setupChatGPTWindow() {
+  const btn = document.getElementById('setupChatgptWindow');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Setting up...';
+  btn.title = '';
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'setup-chatgpt-window' });
+    if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Could not set up ChatGPT window.');
+    btn.textContent = 'Ready';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1400);
+  } catch (e) {
+    btn.textContent = 'Error';
+    btn.title = e.message || String(e);
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2200);
+  }
 }
 
 // ----- Тема -----
@@ -233,6 +258,7 @@ async function load() {
     else el.value = stored[key];
   }
   showProviderFields(stored.provider);
+  showAiChatTools();
   showFeatureStates();
 }
 
@@ -282,6 +308,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('translationEnabled').addEventListener('change', showFeatureStates);
   document.getElementById('aiChatEnabled').addEventListener('change', showFeatureStates);
+  document.getElementById('aiChatProvider').addEventListener('change', () => {
+    showAiChatTools();
+    showFeatureStates();
+  });
+  document.getElementById('setupChatgptWindow').addEventListener('click', setupChatGPTWindow);
 
   // Свап языков
   document.getElementById('swapBtn').addEventListener('click', () => {

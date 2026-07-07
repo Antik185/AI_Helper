@@ -330,6 +330,26 @@ body {
   box-shadow: 0 8px 22px -8px rgba(46,194,126,0.5);
 }
 
+.pp-secondary {
+  width: 100%;
+  padding: 11px 13px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-400);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--field-bg);
+  cursor: pointer;
+  transition: background .15s, transform .12s, color .15s;
+}
+.pp-secondary:hover { background: var(--surface-hover); }
+.pp-secondary:active { transform: translateY(1px); }
+.pp-secondary:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
 /* Подсказка снизу */
 .pp-hint {
   padding: 12px 13px;

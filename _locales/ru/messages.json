@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (бесплатно, лимит)" },
   "providerDeepL":        { "message": "DeepL (нужен API-ключ)" },
   "providerLibre":        { "message": "LibreTranslate (свой инстанс)" },
-  "providerGemini":       { "message": "Google Gemini AI (бесплатно, нужен API-ключ)" },
+  "providerGemini":       { "message": "Google Gemini AI (нужен API-ключ)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Gemini API-ключ" },
   "geminiModelLabel":     { "message": "Модель (необязательно)" },
   "providerOpenRouter":   { "message": "OpenRouter (любая ИИ-модель, нужен API-ключ)" },
@@ -49,6 +50,8 @@
   "usageHint":            { "message": "Зайди в чат Discord (или обнови страницу) — рядом с каждым сообщением появится кнопка «🌐 Перевести». Возле поля ввода — кнопка для перевода своего сообщения." },
 
   "aiChatProviderLabel": { "message": "ИИ-чат на страницах" },
+  "translationFeatureLabel": { "message": "Кнопки перевода" },
+  "translationFeatureHint": { "message": "Показывать перевод рядом с полями ввода и сообщениями Discord." },
   "aiChatProviderOpenRouter": { "message": "OpenRouter (нужен API-ключ)" },
   "aiChatProviderChatGPT": { "message": "ChatGPT (твоя вкладка chatgpt.com)" },
   "aiChatProviderHint": { "message": "Кнопка ✦ на сайтах открывает ИИ-чат, который видит текущую страницу." },

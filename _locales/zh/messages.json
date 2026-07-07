@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory（免费，有限制）" },
   "providerDeepL":        { "message": "DeepL（需要 API 密钥）" },
   "providerLibre":        { "message": "LibreTranslate（自定义实例）" },
-  "providerGemini":       { "message": "Google Gemini AI（免费，需要 API 密钥）" },
+  "providerGemini":       { "message": "Google Gemini AI（需要 API 密钥）" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Gemini API 密钥" },
   "geminiModelLabel":     { "message": "模型（可选）" },
   "providerOpenRouter":   { "message": "OpenRouter（任意 AI 模型，需要 API 密钥）" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ 已保存" },
   "usageHint":            { "message": "打开 Discord 聊天（或刷新页面）——每条消息旁会出现「🌐 翻译」按钮。输入框旁有一个按钮可翻译你自己的消息。" },
 
+  "translationFeatureLabel": { "message": "翻译按钮" },
+  "translationFeatureHint": { "message": "在文本输入框和 Discord 消息旁显示翻译控件。" },
   "lang_ru": { "message": "俄语" },
   "lang_en": { "message": "英语" },
   "lang_uk": { "message": "乌克兰语" },

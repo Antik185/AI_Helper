@@ -2,14 +2,13 @@
 // Контент-скрипт шлёт сюда { type: 'translate', text, targetLang }, мы возвращаем перевод.
 
 const DEFAULTS = {
+  translationEnabled: true,
+  aiChatEnabled: false,
   provider: 'google',
   targetLang: 'ru',
   outboundSourceLang: 'ru',
   outboundTargetLang: 'en',
   deeplKey: '',
-  libreUrl: 'https://libretranslate.de',
-  libreKey: '',
-  myMemoryEmail: '',
   geminiKey: '',
   geminiModel: 'gemini-2.0-flash',
   openrouterKey: '',
@@ -23,6 +22,7 @@ const DEFAULTS = {
 // подменит value у select через DevTools), берём только из этого списка.
 // Иначе кто-нибудь поставил бы себе claude-sonnet и слил кредиты.
 const ALLOWED_OPENROUTER_MODELS = [
+  'openrouter/free',
   'google/gemini-2.5-flash',
   'google/gemini-2.5-flash-lite'
 ];
@@ -30,10 +30,11 @@ const ALLOWED_OPENROUTER_MODELS = [
 // Публичная сборка не содержит общий OpenRouter-ключ. Для общего доступа
 // используйте собственный backend-прокси с лимитами по installation id.
 const DEFAULT_OPENROUTER_KEY = '';
+const DEFAULT_FREE_OPENROUTER_KEY = '';
 
 function sanitizeOpenRouterModel(m) {
   const v = typeof m === 'string' ? m.trim() : '';
-  return ALLOWED_OPENROUTER_MODELS.includes(v) ? v : ALLOWED_OPENROUTER_MODELS[0];
+  return ALLOWED_OPENROUTER_MODELS.includes(v) ? v : 'google/gemini-2.5-flash';
 }
 
 // Полные названия — ИИ-моделям так удобнее, чем кодами.
@@ -46,7 +47,9 @@ const LANG_NAMES = {
 
 async function getSettings() {
   const stored = await chrome.storage.sync.get(DEFAULTS);
-  return { ...DEFAULTS, ...stored };
+  const settings = { ...DEFAULTS, ...stored };
+  if (settings.provider === 'libre') settings.provider = 'google';
+  return settings;
 }
 
 // --- Провайдеры ---
@@ -62,13 +65,12 @@ async function translateGoogle(text, targetLang, sourceLang = 'auto') {
   return { translated, detected };
 }
 
-async function translateMyMemory(text, targetLang, sourceLang, email) {
+async function translateMyMemory(text, targetLang, sourceLang) {
   const sl = sourceLang === 'auto' ? 'autodetect' : sourceLang;
   const params = new URLSearchParams({
     q: text,
     langpair: `${sl}|${targetLang}`
   });
-  if (email) params.set('de', email);
   const res = await fetch(`https://api.mymemory.translated.net/get?${params.toString()}`);
   if (!res.ok) throw new Error(`MyMemory: HTTP ${res.status}`);
   const data = await res.json();
@@ -105,28 +107,6 @@ async function translateDeepL(text, targetLang, sourceLang, apiKey) {
   return {
     translated: item.text,
     detected: (item.detected_source_language || sourceLang || '').toLowerCase()
-  };
-}
-
-async function translateLibre(text, targetLang, sourceLang, baseUrl, apiKey) {
-  const url = `${baseUrl.replace(/\/$/, '')}/translate`;
-  const payload = {
-    q: text,
-    source: sourceLang || 'auto',
-    target: targetLang,
-    format: 'text'
-  };
-  if (apiKey) payload.api_key = apiKey;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error(`LibreTranslate: HTTP ${res.status}`);
-  const data = await res.json();
-  return {
-    translated: data.translatedText,
-    detected: (data.detectedLanguage && data.detectedLanguage.language) || sourceLang || 'auto'
   };
 }
 
@@ -700,6 +680,7 @@ chrome.runtime.onConnect.addListener((port) => {
     const post = (m) => { try { port.postMessage(m); } catch { } };
     try {
       const settings = await getSettings();
+      if (settings.aiChatEnabled === false) throw new Error('ИИ-чат выключен в настройках.');
       const sys = buildChatSystemPrompt(msg.context);
       const history = sanitizeChatHistory(msg.messages);
       if (!history.length) throw new Error('Пустое сообщение.');
@@ -780,12 +761,13 @@ chrome.runtime.onConnect.addListener((port) => {
 async function translate({ text, targetLang, sourceLang = 'auto' }, sender) {
   if (!text || !text.trim()) return { translated: '', detected: sourceLang };
   const settings = await getSettings();
+  if (settings.translationEnabled === false) throw new Error('Перевод выключен в настройках.');
   const tl = targetLang || settings.targetLang;
   switch (settings.provider) {
     case 'google':    return translateGoogle(text, tl, sourceLang);
-    case 'mymemory':  return translateMyMemory(text, tl, sourceLang, settings.myMemoryEmail);
+    case 'openrouter_free': return translateOpenRouter(text, tl, sourceLang, settings.openrouterKey || DEFAULT_FREE_OPENROUTER_KEY, 'openrouter/free');
+    case 'mymemory':  return translateMyMemory(text, tl, sourceLang);
     case 'deepl':     return translateDeepL(text, tl, sourceLang, settings.deeplKey);
-    case 'libre':     return translateLibre(text, tl, sourceLang, settings.libreUrl, settings.libreKey);
     case 'gemini':    return translateGemini(text, tl, sourceLang, settings.geminiKey, settings.geminiModel);
     case 'openrouter':return translateOpenRouter(text, tl, sourceLang, settings.openrouterKey, settings.openrouterModel);
     case 'chatgpt':   return translateChatGPT(text, tl, sourceLang, settings.chatgptModel, sender);

@@ -161,6 +161,33 @@ body {
 
 .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 
+.feature-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface);
+}
+.feature-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; }
+.feature-sub { margin-top: 3px; color: var(--text-faint); font-size: 10px; line-height: 1.35; }
+.feature-disabled { opacity: .42; filter: grayscale(.35); }
+.badge-beta {
+  padding: 2px 6px; border-radius: 999px; color: #fff; background: var(--brand-500);
+  font-size: 8px; font-weight: 800; letter-spacing: .08em;
+}
+.switch { position: relative; flex: 0 0 auto; width: 42px; height: 24px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch-track {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--border);
+  transition: background .18s; box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+.switch-track::after {
+  content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px;
+  border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 2px 5px rgba(0,0,0,.25);
+}
+.switch input:checked + .switch-track { background: var(--brand-500); }
+.switch input:checked + .switch-track::after { transform: translateX(18px); }
+.switch input:focus-visible + .switch-track { box-shadow: 0 0 0 3px var(--brand-glow); }
+.ai-chat-switch { align-self: flex-end; margin-top: -31px; margin-bottom: 0; }
+
 .field-label {
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--text-dim);

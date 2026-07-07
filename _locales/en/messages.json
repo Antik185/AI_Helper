@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (free, limited)" },
   "providerDeepL":        { "message": "DeepL (needs API key)" },
   "providerLibre":        { "message": "LibreTranslate (custom instance)" },
-  "providerGemini":       { "message": "Google Gemini AI (free, needs API key)" },
+  "providerGemini":       { "message": "Google Gemini AI (needs API key)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Gemini API key" },
   "geminiModelLabel":     { "message": "Model (optional)" },
   "providerOpenRouter":   { "message": "OpenRouter (any AI model, needs API key)" },
@@ -49,6 +50,8 @@
   "usageHint":            { "message": "Open a Discord chat (or refresh the page) — each message will get a “🌐 Translate” button next to it. A button near the input lets you translate your own message before sending." },
 
   "aiChatProviderLabel": { "message": "AI chat on pages" },
+  "translationFeatureLabel": { "message": "Translation buttons" },
+  "translationFeatureHint": { "message": "Show translation controls near text fields and Discord messages." },
   "aiChatProviderOpenRouter": { "message": "OpenRouter (API key required)" },
   "aiChatProviderChatGPT": { "message": "ChatGPT (your chatgpt.com tab)" },
   "aiChatProviderHint": { "message": "The ✦ button on web pages opens an AI chat that can see the current page." },

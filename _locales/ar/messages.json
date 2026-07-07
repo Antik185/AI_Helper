@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (مجاني، محدود)" },
   "providerDeepL":        { "message": "DeepL (يحتاج مفتاح API)" },
   "providerLibre":        { "message": "LibreTranslate (خادم خاص)" },
-  "providerGemini":       { "message": "Google Gemini AI (مجاني، يحتاج مفتاح API)" },
+  "providerGemini":       { "message": "Google Gemini AI (يحتاج مفتاح API)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "مفتاح Gemini API" },
   "geminiModelLabel":     { "message": "النموذج (اختياري)" },
   "providerOpenRouter":   { "message": "OpenRouter (أي نموذج ذكاء اصطناعي، يحتاج مفتاح API)" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ تم الحفظ" },
   "usageHint":            { "message": "افتح محادثة في Discord (أو حدّث الصفحة) — بجانب كل رسالة سيظهر زر «🌐 ترجم». بجانب حقل الإدخال زر لترجمة رسالتك الخاصة." },
 
+  "translationFeatureLabel": { "message": "أزرار الترجمة" },
+  "translationFeatureHint": { "message": "إظهار أدوات الترجمة بجانب حقول النص ورسائل Discord." },
   "lang_ru": { "message": "الروسية" },
   "lang_en": { "message": "الإنجليزية" },
   "lang_uk": { "message": "الأوكرانية" },

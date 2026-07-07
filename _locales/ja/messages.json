@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory（無料・制限あり）" },
   "providerDeepL":        { "message": "DeepL（APIキー必要）" },
   "providerLibre":        { "message": "LibreTranslate（独自インスタンス）" },
-  "providerGemini":       { "message": "Google Gemini AI（無料・APIキー必要）" },
+  "providerGemini":       { "message": "Google Gemini AI（APIキー必要）" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Gemini APIキー" },
   "geminiModelLabel":     { "message": "モデル（任意）" },
   "providerOpenRouter":   { "message": "OpenRouter（任意のAIモデル、APIキー必要）" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ 保存しました" },
   "usageHint":            { "message": "Discord のチャットを開く（またはページを再読み込み）— 各メッセージの横に「🌐 翻訳」ボタンが表示されます。入力欄の横には自分のメッセージを翻訳するボタンがあります。" },
 
+  "translationFeatureLabel": { "message": "翻訳ボタン" },
+  "translationFeatureHint": { "message": "入力欄とDiscordメッセージの近くに翻訳操作を表示します。" },
   "lang_ru": { "message": "ロシア語" },
   "lang_en": { "message": "英語" },
   "lang_uk": { "message": "ウクライナ語" },

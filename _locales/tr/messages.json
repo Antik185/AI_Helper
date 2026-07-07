@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (ücretsiz, limitli)" },
   "providerDeepL":        { "message": "DeepL (API anahtarı gerekli)" },
   "providerLibre":        { "message": "LibreTranslate (özel sunucu)" },
-  "providerGemini":       { "message": "Google Gemini AI (ücretsiz, API anahtarı gerekli)" },
+  "providerGemini":       { "message": "Google Gemini AI (API anahtarı gerekli)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Gemini API anahtarı" },
   "geminiModelLabel":     { "message": "Model (isteğe bağlı)" },
   "providerOpenRouter":   { "message": "OpenRouter (herhangi bir AI modeli, API anahtarı gerekli)" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ Kaydedildi" },
   "usageHint":            { "message": "Discord sohbetini aç (veya sayfayı yenile) — her mesajın yanında «🌐 Çevir» düğmesi görünecek. Giriş kutusunun yanında ise kendi mesajını çevirmek için bir düğme var." },
 
+  "translationFeatureLabel": { "message": "Çeviri düğmeleri" },
+  "translationFeatureHint": { "message": "Metin alanları ve Discord mesajları yanında çeviri denetimlerini göster." },
   "lang_ru": { "message": "Rusça" },
   "lang_en": { "message": "İngilizce" },
   "lang_uk": { "message": "Ukraynaca" },

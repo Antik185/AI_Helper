@@ -25,8 +25,6 @@
     "https://api.mymemory.translated.net/*",
     "https://api-free.deepl.com/*",
     "https://api.deepl.com/*",
-    "https://libretranslate.com/*",
-    "https://libretranslate.de/*",
     "https://openrouter.ai/*",
     "https://chatgpt.com/*"
   ],

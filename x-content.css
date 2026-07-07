@@ -24,7 +24,7 @@
   background: #1d9bf0;
   color: #fff;
   border: none;
-  border-radius: 999px 0 0 999px;
+  border-radius: 0;
   padding: 5px 12px;
   font-size: 11px;
   font-weight: 700;
@@ -42,6 +42,13 @@
   cursor: wait;
   opacity: 0.85;
 }
+
+.dth-input-drag {
+  border: 0; border-radius: 999px 0 0 999px; padding: 5px 5px 5px 8px;
+  background: #1677b8; color: rgba(255,255,255,.82); cursor: grab;
+  font: 700 10px/1 system-ui; touch-action: none;
+}
+.dth-input-drag:active, .dth-dragging .dth-input-drag { cursor: grabbing; }
 
 .dth-input-arrow {
   background: #1d9bf0;
@@ -91,6 +98,11 @@
 
 .dth-lang-dropdown.dth-open {
   display: block;
+}
+
+.dth-input-wrap.dth-drop-up .dth-lang-dropdown {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 .dth-lang-item {

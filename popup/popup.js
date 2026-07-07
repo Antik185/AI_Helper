@@ -1,12 +1,11 @@
 const FIELDS = [
+  'translationEnabled',
+  'aiChatEnabled',
   'provider',
   'targetLang',
   'outboundSourceLang',
   'outboundTargetLang',
   'deeplKey',
-  'libreUrl',
-  'libreKey',
-  'myMemoryEmail',
   'geminiKey',
   'geminiModel',
   'openrouterKey',
@@ -17,14 +16,13 @@ const FIELDS = [
 ];
 
 const DEFAULTS = {
+  translationEnabled: true,
+  aiChatEnabled: false,
   provider: 'google',
   targetLang: 'ru',
   outboundSourceLang: 'ru',
   outboundTargetLang: 'en',
   deeplKey: '',
-  libreUrl: 'https://libretranslate.de',
-  libreKey: '',
-  myMemoryEmail: '',
   geminiKey: '',
   geminiModel: 'gemini-2.0-flash',
   openrouterKey: '',
@@ -56,7 +54,7 @@ const DISPLAY_OVERRIDES = { uk: 'UA', be: 'BY', kk: 'KZ', ja: 'JP', zh: 'CN' };
 
 // Провайдеры с бейджем FREE — те, где можно работать без своего ключа.
 // OpenRouter требует пользовательский API-ключ, поэтому без бейджа FREE.
-const FREE_PROVIDERS = new Set(['google', 'mymemory']);
+const FREE_PROVIDERS = new Set(['openrouter_free', 'google', 'mymemory']);
 
 const SUN_PATH = `<circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`;
 const MOON_PATH = `<path d="M20 14.5A8 8 0 119.5 4 6.5 6.5 0 0020 14.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>`;
@@ -149,11 +147,28 @@ function populateUiLangSelect(selectEl) {
 function showProviderFields(provider) {
   document.getElementById('chatgpt-fields').hidden = provider !== 'chatgpt';
   document.getElementById('gemini-fields').hidden = provider !== 'gemini';
-  document.getElementById('openrouter-fields').hidden = provider !== 'openrouter';
+  document.getElementById('openrouter-fields').hidden = provider !== 'openrouter' && provider !== 'openrouter_free';
   document.getElementById('deepl-fields').hidden = provider !== 'deepl';
-  document.getElementById('libre-fields').hidden = provider !== 'libre';
-  document.getElementById('mymemory-fields').hidden = provider !== 'mymemory';
   document.getElementById('freeBadge').hidden = !FREE_PROVIDERS.has(provider);
+}
+
+function setControlDisabled(id, disabled) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.disabled = disabled;
+  const container = el.closest('.field, .card, .provider-fields');
+  if (container) container.classList.toggle('feature-disabled', disabled);
+}
+
+function showFeatureStates() {
+  const translationOff = !document.getElementById('translationEnabled').checked;
+  const aiChatOff = !document.getElementById('aiChatEnabled').checked;
+  [
+    'provider', 'targetLang', 'outboundSourceLang', 'outboundTargetLang',
+    'deeplKey', 'geminiKey',
+    'geminiModel', 'openrouterKey', 'openrouterModel', 'chatgptModel', 'swapBtn'
+  ].forEach(id => setControlDisabled(id, translationOff));
+  setControlDisabled('aiChatProvider', aiChatOff);
 }
 
 // ----- Тема -----
@@ -213,16 +228,19 @@ async function load() {
   await applyLocale(stored.uiLang);
   for (const key of FIELDS) {
     const el = document.getElementById(key);
-    if (el && stored[key] !== undefined) el.value = stored[key];
+    if (!el || stored[key] === undefined) continue;
+    if (el.type === 'checkbox') el.checked = stored[key] !== false;
+    else el.value = stored[key];
   }
   showProviderFields(stored.provider);
+  showFeatureStates();
 }
 
 async function save() {
   const payload = {};
   for (const key of FIELDS) {
     const el = document.getElementById(key);
-    if (el) payload[key] = el.value;
+    if (el) payload[key] = el.type === 'checkbox' ? el.checked : el.value;
   }
   // theme сохраняется отдельно — при клике тогглера, чтобы было моментально.
   payload.theme = document.body.dataset.theme;
@@ -261,6 +279,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('provider').addEventListener('change', (e) => {
     showProviderFields(e.target.value);
   });
+
+  document.getElementById('translationEnabled').addEventListener('change', showFeatureStates);
+  document.getElementById('aiChatEnabled').addEventListener('change', showFeatureStates);
 
   // Свап языков
   document.getElementById('swapBtn').addEventListener('click', () => {

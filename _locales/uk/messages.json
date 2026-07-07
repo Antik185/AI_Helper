@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (безкоштовно, з лімітом)" },
   "providerDeepL":        { "message": "DeepL (потрібен API-ключ)" },
   "providerLibre":        { "message": "LibreTranslate (власний інстанс)" },
-  "providerGemini":       { "message": "Google Gemini AI (безкоштовно, потрібен API-ключ)" },
+  "providerGemini":       { "message": "Google Gemini AI (потрібен API-ключ)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Gemini API-ключ" },
   "geminiModelLabel":     { "message": "Модель (необов'язково)" },
   "providerOpenRouter":   { "message": "OpenRouter (будь-яка ШІ-модель, потрібен API-ключ)" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ Збережено" },
   "usageHint":            { "message": "Зайди в чат Discord (або онови сторінку) — поруч з кожним повідомленням з'явиться кнопка «🌐 Перекласти». Біля поля вводу — кнопка для перекладу свого повідомлення." },
 
+  "translationFeatureLabel": { "message": "Кнопки перекладу" },
+  "translationFeatureHint": { "message": "Показувати переклад біля полів введення та повідомлень Discord." },
   "lang_ru": { "message": "Російська" },
   "lang_en": { "message": "Англійська" },
   "lang_uk": { "message": "Українська" },

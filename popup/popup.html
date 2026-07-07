@@ -29,6 +29,17 @@
   <!-- ============ BODY ============ -->
   <div class="pp-body">
 
+    <div class="feature-row">
+      <div>
+        <div class="feature-title" data-i18n="translationFeatureLabel"></div>
+        <div class="feature-sub" data-i18n="translationFeatureHint"></div>
+      </div>
+      <label class="switch">
+        <input id="translationEnabled" type="checkbox">
+        <span class="switch-track"></span>
+      </label>
+    </div>
+
     <!-- Провайдер -->
     <div class="field">
       <span class="field-label">
@@ -38,13 +49,13 @@
       </span>
       <div class="select">
         <select id="provider">
+          <option value="openrouter_free" data-i18n="providerOpenRouterFree"></option>
           <option value="google"     data-i18n="providerGoogle"></option>
           <option value="chatgpt"    data-i18n="providerChatGPT"></option>
           <option value="gemini"     data-i18n="providerGemini"></option>
           <option value="openrouter" data-i18n="providerOpenRouter"></option>
           <option value="mymemory"   data-i18n="providerMyMemory"></option>
           <option value="deepl"      data-i18n="providerDeepL"></option>
-          <option value="libre"      data-i18n="providerLibre"></option>
         </select>
       </div>
     </div>
@@ -81,13 +92,14 @@
     <div id="openrouter-fields" class="provider-fields" hidden>
       <div class="field">
         <span class="field-label" data-i18n="openrouterKeyLabel"></span>
-        <input id="openrouterKey" class="text-field" type="text" autocomplete="off" data-i18n-placeholder="openrouterKeyPlaceholder">
+        <input id="openrouterKey" class="text-field" type="password" autocomplete="off" data-i18n-placeholder="openrouterKeyPlaceholder">
         <small class="hint-inline" data-i18n="openrouterKeyHint"></small>
       </div>
       <div class="field">
         <span class="field-label" data-i18n="openrouterModelLabel"></span>
         <div class="select">
           <select id="openrouterModel">
+            <option value="openrouter/free">OpenRouter Free (auto model)</option>
             <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
             <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
           </select>
@@ -103,32 +115,17 @@
       </div>
     </div>
 
-    <!-- Поля для LibreTranslate -->
-    <div id="libre-fields" class="provider-fields" hidden>
-      <div class="field">
-        <span class="field-label" data-i18n="libreUrlLabel"></span>
-        <input id="libreUrl" class="text-field" type="url" placeholder="https://libretranslate.de">
-      </div>
-      <div class="field">
-        <span class="field-label" data-i18n="libreKeyLabel"></span>
-        <input id="libreKey" class="text-field" type="password">
-      </div>
-    </div>
-
-    <!-- Поля для MyMemory -->
-    <div id="mymemory-fields" class="provider-fields" hidden>
-      <div class="field">
-        <span class="field-label" data-i18n="mymemoryEmailLabel"></span>
-        <input id="myMemoryEmail" class="text-field" type="email" placeholder="you@example.com">
-      </div>
-    </div>
-
     <!-- AI-чат на страницах -->
     <div class="field">
       <span class="field-label">
         <span class="dot"></span>
         <span data-i18n="aiChatProviderLabel"></span>
+        <span class="badge-beta">BETA</span>
       </span>
+      <label class="switch ai-chat-switch">
+        <input id="aiChatEnabled" type="checkbox">
+        <span class="switch-track"></span>
+      </label>
       <div class="select">
         <select id="aiChatProvider">
           <option value="openrouter" data-i18n="aiChatProviderOpenRouter"></option>

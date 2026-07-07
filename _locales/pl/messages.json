@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (darmowe, z limitem)" },
   "providerDeepL":        { "message": "DeepL (wymaga klucza API)" },
   "providerLibre":        { "message": "LibreTranslate (własna instancja)" },
-  "providerGemini":       { "message": "Google Gemini AI (darmowe, wymaga klucza API)" },
+  "providerGemini":       { "message": "Google Gemini AI (wymaga klucza API)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Klucz API Gemini" },
   "geminiModelLabel":     { "message": "Model (opcjonalnie)" },
   "providerOpenRouter":   { "message": "OpenRouter (dowolny model AI, wymaga klucza API)" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ Zapisano" },
   "usageHint":            { "message": "Otwórz czat na Discordzie (lub odśwież stronę) — obok każdej wiadomości pojawi się przycisk «🌐 Tłumacz». Obok pola wprowadzania jest przycisk do tłumaczenia własnej wiadomości." },
 
+  "translationFeatureLabel": { "message": "Przyciski tłumaczenia" },
+  "translationFeatureHint": { "message": "Pokazuj tłumaczenie obok pól tekstowych i wiadomości Discord." },
   "lang_ru": { "message": "Rosyjski" },
   "lang_en": { "message": "Angielski" },
   "lang_uk": { "message": "Ukraiński" },

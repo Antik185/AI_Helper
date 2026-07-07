@@ -627,6 +627,7 @@
   }
 
   function buildUI() {
+    if (fab || aiSettings.aiChatEnabled === false) return;
     fab = el('button', 'dth-ai-fab', '✦');
     fab.type = 'button';
     fab.title = t('aiChatFabTitle');
@@ -1149,12 +1150,16 @@
       aiSettings = s;
       await ensureOverrideLocale(s.uiLang);
     } catch { }
-    if (document.body) buildUI();
-    else document.addEventListener('DOMContentLoaded', buildUI, { once: true });
+    if (aiSettings.aiChatEnabled !== false) {
+      if (document.body) buildUI();
+      else document.addEventListener('DOMContentLoaded', buildUI, { once: true });
+    }
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg && msg.type === 'ai-quote') {
+      if (aiSettings.aiChatEnabled === false) return;
+      if (!panel) buildUI();
       if (!panel) return;
       // selectionText из контекстного меню схлопывает переносы строк и может
       // обрезаться — берём живое выделение со страницы, если оно ещё есть.
@@ -1167,7 +1172,16 @@
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
-    chrome.runtime.sendMessage({ type: 'getSettings' }, (s) => { if (s) aiSettings = s; });
+    chrome.runtime.sendMessage({ type: 'getSettings' }, (s) => {
+      if (!s) return;
+      aiSettings = s;
+      if (s.aiChatEnabled !== false) buildUI();
+      if (fab) fab.style.display = s.aiChatEnabled === false ? 'none' : '';
+      if (panel) {
+        panel.style.display = s.aiChatEnabled === false ? 'none' : '';
+        if (s.aiChatEnabled === false) panel.classList.remove('dth-ai-open');
+      }
+    });
     if (!changes.uiLang) return;
     ensureOverrideLocale(changes.uiLang.newValue).then(() => {
       if (!panel) return;

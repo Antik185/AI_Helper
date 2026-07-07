@@ -27,8 +27,11 @@ const LANG_NAMES = {
 
 const STATE = {
   settings: null,
-  activeInput: null    // the element user is currently typing into
+  activeInput: null,
+  customPosition: null
 };
+
+const POSITION_KEY = `dthButtonPosition:${location.hostname}`;
 
 let overrideMessages = null;
 
@@ -79,6 +82,8 @@ async function loadSettings() {
     STATE.settings = await new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: 'getSettings' }, (s) => resolve(s || {}));
     });
+    const savedPosition = await chrome.storage.local.get(POSITION_KEY);
+    STATE.customPosition = savedPosition[POSITION_KEY] || null;
     await ensureOverrideLocale(STATE.settings.uiLang);
   } catch {
     STATE.settings = {};
@@ -182,8 +187,75 @@ let inputWrap = null;
 let inputMainBtn = null;
 let langDropdown = null;
 
+function findNearbySendButton(el) {
+  const scope = el.closest('form') || el.parentElement?.parentElement || el.parentElement;
+  if (!scope) return null;
+  const fieldRect = el.getBoundingClientRect();
+  return Array.from(scope.querySelectorAll(
+    'button[type="submit"], input[type="submit"], button[aria-label*="send" i], button[aria-label*="отправ" i], [data-testid*="send" i]'
+  )).filter(btn => {
+    const r = btn.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && Math.abs(r.right - fieldRect.right) < 320;
+  }).sort((a, b) => {
+    const ar = a.getBoundingClientRect();
+    const br = b.getBoundingClientRect();
+    return Math.abs(ar.right - fieldRect.right) - Math.abs(br.right - fieldRect.right);
+  })[0] || null;
+}
+
+function updateDropdownDirection() {
+  if (!inputWrap || !langDropdown) return;
+  requestAnimationFrame(() => {
+    const rect = inputWrap.getBoundingClientRect();
+    const needed = Math.min(langDropdown.scrollHeight || 280, 280) + 12;
+    const below = window.innerHeight - rect.bottom;
+    inputWrap.classList.toggle('dth-drop-up', below < needed && rect.top > below);
+  });
+}
+
+function setupDrag(handle) {
+  let drag = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = inputWrap.getBoundingClientRect();
+    drag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    handle.setPointerCapture(e.pointerId);
+    inputWrap.classList.add('dth-dragging');
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const x = Math.max(6, Math.min(window.innerWidth - inputWrap.offsetWidth - 6, e.clientX - drag.dx));
+    const y = Math.max(6, Math.min(window.innerHeight - inputWrap.offsetHeight - 6, e.clientY - drag.dy));
+    STATE.customPosition = { x, y };
+    Object.assign(inputWrap.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto' });
+    updateDropdownDirection();
+  });
+  const finish = e => {
+    if (!drag) return;
+    drag = null;
+    inputWrap.classList.remove('dth-dragging');
+    try { handle.releasePointerCapture(e.pointerId); } catch { }
+    chrome.storage.local.set({ [POSITION_KEY]: STATE.customPosition });
+  };
+  handle.addEventListener('pointerup', finish);
+  handle.addEventListener('pointercancel', finish);
+  handle.addEventListener('dblclick', e => {
+    e.preventDefault();
+    STATE.customPosition = null;
+    chrome.storage.local.remove(POSITION_KEY);
+    positionButton();
+  });
+}
+
 function positionButton() {
   if (!inputWrap) return;
+  if (STATE.settings && STATE.settings.translationEnabled === false) {
+    inputWrap.classList.remove('dth-visible');
+    if (langDropdown) langDropdown.classList.remove('dth-open');
+    return;
+  }
   const el = findActiveInput();
   // Показываем кнопку только пока поле (или сама кнопка) в фокусе — иначе
   // MutationObserver "воскрешает" её после blur, пока в поле остаётся текст.
@@ -195,15 +267,24 @@ function positionButton() {
   STATE.activeInput = el;
   const rect = el.getBoundingClientRect();
   const btnH = inputWrap.offsetHeight || 30;
-
-  // Inside the field, right edge with a small inset.
-  inputWrap.style.left = 'auto';
-  inputWrap.style.right = Math.max(8, window.innerWidth - rect.right + 8) + 'px';
-
-  // Vertically centered within the input.
-  const topPos = Math.max(4, rect.top + (rect.height - btnH) / 2);
-  inputWrap.style.top = topPos + 'px';
+  if (STATE.customPosition) {
+    const x = Math.max(6, Math.min(window.innerWidth - inputWrap.offsetWidth - 6, STATE.customPosition.x));
+    const y = Math.max(6, Math.min(window.innerHeight - btnH - 6, STATE.customPosition.y));
+    Object.assign(inputWrap.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto' });
+    updateDropdownDirection();
+    return;
+  }
+  const sendButton = findNearbySendButton(el);
+  const anchor = sendButton ? sendButton.getBoundingClientRect() : rect;
+  const btnW = inputWrap.offsetWidth || 92;
+  const left = Math.max(6, Math.min(window.innerWidth - btnW - 6, anchor.right - btnW));
+  let topPos = anchor.top - btnH - 7;
+  if (topPos < 6) topPos = Math.min(window.innerHeight - btnH - 6, anchor.bottom + 7);
+  inputWrap.style.left = `${left}px`;
+  inputWrap.style.right = 'auto';
+  inputWrap.style.top = `${topPos}px`;
   inputWrap.style.bottom = 'auto';
+  updateDropdownDirection();
 }
 
 function refreshButtonLabel() {
@@ -306,11 +387,19 @@ function setupButton() {
     e.preventDefault();
     e.stopPropagation();
     langDropdown.classList.toggle('dth-open');
+    updateDropdownDirection();
   });
 
   const dropdown = document.createElement('div');
   dropdown.className = 'dth-lang-dropdown';
 
+  const dragHandle = document.createElement('button');
+  dragHandle.type = 'button';
+  dragHandle.className = 'dth-input-drag';
+  dragHandle.textContent = '⋮⋮';
+  dragHandle.title = 'Drag to move; double-click to reset';
+
+  wrap.appendChild(dragHandle);
   wrap.appendChild(mainBtn);
   wrap.appendChild(arrowBtn);
   wrap.appendChild(dropdown);
@@ -321,6 +410,7 @@ function setupButton() {
   langDropdown = dropdown;
 
   populateDropdown();
+  setupDrag(dragHandle);
 
   // --- Event listeners ---
 

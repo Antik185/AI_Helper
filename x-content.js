@@ -26,8 +26,11 @@ const LANG_NAMES = {
 
 const STATE = {
   settings: null,
-  activeCompose: null
+  activeCompose: null,
+  customPosition: null
 };
+
+const POSITION_KEY = `dthButtonPosition:${location.hostname}`;
 
 let overrideMessages = null;
 
@@ -78,6 +81,8 @@ async function loadSettings() {
     STATE.settings = await new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: 'getSettings' }, (s) => resolve(s || {}));
     });
+    const savedPosition = await chrome.storage.local.get(POSITION_KEY);
+    STATE.customPosition = savedPosition[POSITION_KEY] || null;
     await ensureOverrideLocale(STATE.settings.uiLang);
   } catch {
     STATE.settings = {};
@@ -155,18 +160,80 @@ let inputWrap = null;
 let inputMainBtn = null;
 let langDropdown = null;
 
+function updateDropdownDirection() {
+  if (!inputWrap || !langDropdown) return;
+  requestAnimationFrame(() => {
+    const rect = inputWrap.getBoundingClientRect();
+    const needed = Math.min(langDropdown.scrollHeight || 280, 280) + 12;
+    const below = window.innerHeight - rect.bottom;
+    inputWrap.classList.toggle('dth-drop-up', below < needed && rect.top > below);
+  });
+}
+
+function setupDrag(handle) {
+  let drag = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const rect = inputWrap.getBoundingClientRect();
+    drag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    handle.setPointerCapture(e.pointerId);
+    inputWrap.classList.add('dth-dragging');
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const x = Math.max(6, Math.min(window.innerWidth - inputWrap.offsetWidth - 6, e.clientX - drag.dx));
+    const y = Math.max(6, Math.min(window.innerHeight - inputWrap.offsetHeight - 6, e.clientY - drag.dy));
+    STATE.customPosition = { x, y };
+    Object.assign(inputWrap.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto' });
+    updateDropdownDirection();
+  });
+  const finish = e => {
+    if (!drag) return;
+    drag = null;
+    inputWrap.classList.remove('dth-dragging');
+    try { handle.releasePointerCapture(e.pointerId); } catch { }
+    chrome.storage.local.set({ [POSITION_KEY]: STATE.customPosition });
+  };
+  handle.addEventListener('pointerup', finish);
+  handle.addEventListener('pointercancel', finish);
+  handle.addEventListener('dblclick', e => {
+    e.preventDefault();
+    STATE.customPosition = null;
+    chrome.storage.local.remove(POSITION_KEY);
+    positionButton();
+  });
+}
+
 function positionButton() {
   if (!inputWrap) return;
+  if (STATE.settings && STATE.settings.translationEnabled === false) {
+    inputWrap.classList.remove('dth-visible');
+    if (langDropdown) langDropdown.classList.remove('dth-open');
+    return;
+  }
   const el = findActiveCompose();
   const hasText = !!el && composeHasText(el);
   inputWrap.classList.toggle('dth-visible', hasText);
   if (!el) return;
   STATE.activeCompose = el;
   const rect = el.getBoundingClientRect();
-  inputWrap.style.left = 'auto';
-  inputWrap.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
-  inputWrap.style.bottom = Math.max(8, window.innerHeight - rect.bottom + 6) + 'px';
-  inputWrap.style.top = 'auto';
+  const btnH = inputWrap.offsetHeight || 30;
+  if (STATE.customPosition) {
+    const x = Math.max(6, Math.min(window.innerWidth - inputWrap.offsetWidth - 6, STATE.customPosition.x));
+    const y = Math.max(6, Math.min(window.innerHeight - btnH - 6, STATE.customPosition.y));
+    Object.assign(inputWrap.style, { left: `${x}px`, top: `${y}px`, right: 'auto', bottom: 'auto' });
+    updateDropdownDirection();
+    return;
+  }
+  const send = el.closest('form')?.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"], button[type="submit"]');
+  const anchor = send && send.getBoundingClientRect().width ? send.getBoundingClientRect() : rect;
+  const btnW = inputWrap.offsetWidth || 92;
+  inputWrap.style.left = `${Math.max(6, Math.min(window.innerWidth - btnW - 6, anchor.right - btnW))}px`;
+  inputWrap.style.right = 'auto';
+  inputWrap.style.top = `${Math.max(6, anchor.top - btnH - 7)}px`;
+  inputWrap.style.bottom = 'auto';
+  updateDropdownDirection();
 }
 
 function refreshButtonLabel() {
@@ -271,11 +338,19 @@ function setupButton() {
     e.preventDefault();
     e.stopPropagation();
     langDropdown.classList.toggle('dth-open');
+    updateDropdownDirection();
   });
 
   const dropdown = document.createElement('div');
   dropdown.className = 'dth-lang-dropdown';
 
+  const dragHandle = document.createElement('button');
+  dragHandle.type = 'button';
+  dragHandle.className = 'dth-input-drag';
+  dragHandle.textContent = '⋮⋮';
+  dragHandle.title = 'Drag to move; double-click to reset';
+
+  wrap.appendChild(dragHandle);
   wrap.appendChild(mainBtn);
   wrap.appendChild(arrowBtn);
   wrap.appendChild(dropdown);
@@ -286,6 +361,7 @@ function setupButton() {
   langDropdown = dropdown;
 
   populateDropdown();
+  setupDrag(dragHandle);
 
   window.addEventListener('resize', positionButton);
   window.addEventListener('scroll', positionButton, true);

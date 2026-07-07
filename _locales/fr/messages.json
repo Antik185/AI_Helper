@@ -21,7 +21,8 @@
   "providerMyMemory":     { "message": "MyMemory (gratuit, limité)" },
   "providerDeepL":        { "message": "DeepL (clé API requise)" },
   "providerLibre":        { "message": "LibreTranslate (instance personnalisée)" },
-  "providerGemini":       { "message": "Google Gemini AI (gratuit, clé API requise)" },
+  "providerGemini":       { "message": "Google Gemini AI (clé API requise)" },
+  "providerOpenRouterFree": { "message": "🔥 OpenRouter Free" },
   "geminiKeyLabel":       { "message": "Clé API Gemini" },
   "geminiModelLabel":     { "message": "Modèle (optionnel)" },
   "providerOpenRouter":   { "message": "OpenRouter (n'importe quel modèle IA, clé API requise)" },
@@ -48,6 +49,8 @@
   "savedStatus":          { "message": "✓ Enregistré" },
   "usageHint":            { "message": "Ouvrez un chat Discord (ou rechargez la page) — à côté de chaque message apparaîtra un bouton « 🌐 Traduire ». Près du champ de saisie, un bouton permet de traduire votre propre message." },
 
+  "translationFeatureLabel": { "message": "Boutons de traduction" },
+  "translationFeatureHint": { "message": "Afficher les outils de traduction près des champs et messages Discord." },
   "lang_ru": { "message": "Russe" },
   "lang_en": { "message": "Anglais" },
   "lang_uk": { "message": "Ukrainien" },

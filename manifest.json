@@ -9,6 +9,7 @@
     "activeTab",
     "downloads",
     "windows",
+    "notifications",
     "contextMenus",
     "cookies",
     "declarativeNetRequest",
@@ -76,6 +77,18 @@
     {
       "resources": ["_locales/*"],
       "matches": ["<all_urls>"]
+    },
+    {
+      "resources": [
+        "animated/son/*.png",
+        "animated/son/*.webm",
+        "animated/kopaet/*.png",
+        "animated/kopaet/*.webm"
+      ],
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ]
     }
   ],
   "icons": {

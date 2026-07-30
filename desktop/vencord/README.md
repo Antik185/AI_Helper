@@ -3,13 +3,59 @@
 Userplugin для [Vencord](https://vencord.dev/). Тот же функционал, что у браузерного расширения и BetterDiscord-плагина, но интегрирован в React-дерево Discord нативно через Vencord API.
 
 ## Что внутри
-- Кнопка **🌐 Translate** под каждым сообщением (через `addAccessory`)
-- Кнопка-глобус в **chat bar** рядом с эмодзи (через `addChatBarButton`) — переводит твой текст перед отправкой
+- Кнопка **🌐 Translate** под каждым сообщением
+- Кнопка-глобус рядом с полем ввода — переводит твой текст перед отправкой
 - Настройки в родной панели Vencord — провайдер, языки, ключи
-- 6 провайдеров: Google, Gemini, OpenRouter, MyMemory, DeepL, LibreTranslate
-- Дефолтный OpenRouter-ключ встроен (можно сразу пользоваться без регистрации)
+- Провайдеры: Google, Gemini, OpenRouter, MyMemory, DeepL, LibreTranslate
+- Для первого теста лучше использовать Google Translate, он работает без API-ключа
 
-## Установка
+## Быстрая установка через installer
+
+Для Windows есть готовый установочный скрипт:
+
+```powershell
+cd E:\discordHelper\desktop\vencord
+.\install-discord-translate-helper.ps1
+```
+
+Или можно запустить двойным кликом:
+
+```text
+install-discord-translate-helper.cmd
+```
+
+Что делает installer:
+
+1. Проверяет `git`, `node`, `npm`, `pnpm`.
+2. Если `pnpm` не установлен — ставит его через `npm`.
+3. Клонирует Vencord в `E:\Vencord`, если его ещё нет.
+4. Если Vencord уже есть — обновляет его через `git pull --ff-only`.
+5. Копирует `DiscordTranslateHelper` в `E:\Vencord\src\userplugins\`.
+6. Запускает `pnpm install`.
+7. Собирает Vencord через `pnpm build`.
+8. Запускает `pnpm inject`, чтобы установить Vencord в Discord.
+
+Обычно выбирай **Discord Stable**, если installer Vencord спросит, куда ставить.
+
+После установки:
+
+1. Перезапусти Discord.
+2. Открой **User Settings → Vencord → Plugins**.
+3. Найди `DiscordTranslateHelper`.
+4. Включи плагин.
+5. Для первого теста выбери провайдер **Google Translate**, он работает без API-ключа.
+
+Параметры installer:
+
+```powershell
+.\install-discord-translate-helper.ps1 -Discord stable
+.\install-discord-translate-helper.ps1 -Discord canary
+.\install-discord-translate-helper.ps1 -VencordDir D:\Vencord
+.\install-discord-translate-helper.ps1 -NoUpdate
+.\install-discord-translate-helper.ps1 -SkipInject
+```
+
+## Ручная установка
 
 Userplugins в Vencord требуют сборки из исходников. Без обходных путей — это сознательное решение разработчиков, чтобы не разрешать загрузку произвольного кода в один клик.
 
@@ -36,10 +82,11 @@ Vencord/
 └── src/
     └── userplugins/
         └── DiscordTranslateHelper/
-            └── index.tsx     ← наш файл
+            ├── index.tsx
+            └── native.ts
 ```
 
-Путь к нашему файлу: [`DiscordTranslateHelper/index.tsx`](DiscordTranslateHelper/index.tsx)
+Путь к папке плагина: [`DiscordTranslateHelper/`](DiscordTranslateHelper/)
 
 ### Шаг 3 — собрать и поставить
 
@@ -59,7 +106,7 @@ pnpm inject
 1. В Discord: **Settings → Vencord → Plugins**.
 2. Найди `DiscordTranslateHelper` в списке, включи тумблер.
 3. Нажми ⚙ Settings рядом с ним.
-4. Выбери провайдера (рекомендую **OpenRouter** — будет работать с дефолтным ключом сразу).
+4. Выбери провайдера. Для первого теста рекомендую **Google Translate**, он работает без ключа.
 5. Настрой языки.
 
 Зайди в любой чат — у сообщений появится «🌐 Translate», справа от инпута появится кнопка-глобус.
@@ -67,7 +114,7 @@ pnpm inject
 ## Обновление
 
 Когда выйдет новая версия плагина:
-1. Замени файл `Vencord/src/userplugins/DiscordTranslateHelper/index.tsx`
+1. Замени папку `Vencord/src/userplugins/DiscordTranslateHelper`
 2. `pnpm build`
 3. Перезапусти Discord (Ctrl+R или закрой/открой)
 
@@ -106,8 +153,8 @@ Vencord, как и BetterDiscord, формально нарушает Discord To
 | | BD-плагин | Vencord-плагин |
 |---|---|---|
 | Установка | один .plugin.js файл | сборка из исходников |
-| Инжект | MutationObserver по DOM | нативный Vencord API (`addAccessory`, `addChatBarButton`) |
-| Кнопка ввода | плавающая, position: fixed | в chat bar рядом с эмодзи |
+| Инжект | MutationObserver по DOM | Vencord API + native helper для fetch |
+| Кнопка ввода | плавающая, position: fixed | плавающая, position: fixed |
 | Стиль кнопок | повторяет Discord-классы | повторяет Discord-классы |
 | Производительность | чуть тяжелее (MutationObserver) | чуть легче (React-интеграция) |
 

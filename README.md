@@ -13,6 +13,9 @@ It started as a Discord translation helper, but now also supports X/Twitter and 
 - Smart dropdown direction: opens upward when the input is near the bottom of the screen.
 - Translation can be enabled or disabled from the popup.
 - AI chat on pages, marked as beta and disabled by default.
+- X Reply Agent Beta can analyze X posts, write reply drafts, and optionally run through a feed with a reply limit.
+- Popup settings save automatically, and the X Reply Agent section can be collapsed.
+- X Agent reports support local 1-5 ratings and written preferences that influence future replies through prompt examples.
 - Light/dark popup theme.
 - Interface languages: English, Russian, Ukrainian, German, French, Spanish, Portuguese, Turkish, Polish, Arabic, Chinese, and Japanese.
 
@@ -92,6 +95,35 @@ Recommended setup:
 
 This mode is useful if you already pay for ChatGPT and do not want every request to go through paid API providers. It depends on the ChatGPT web interface, so if ChatGPT changes its page layout, reload the ChatGPT tab and the target website first. If it still stops working, update the extension.
 
+### X Reply Agent Beta
+
+X Reply Agent is disabled by default.
+
+To use it:
+
+1. Open the extension popup.
+2. Turn on `X Reply Agent`.
+3. Choose `OpenRouter` or `ChatGPT subscription` in the separate Agent provider selector.
+4. Choose the reply language in the outgoing `Translate to` setting. X Agent always uses this language, even when X automatically translates a post.
+5. Write your agent prompt: tone, length, emojis, and what to avoid.
+6. Set the feed run limit, for example `3` or `10`.
+7. Choose how many saved memory examples are sent with each request. `0` disables memory; higher values increase input-token usage, cost, and response time.
+8. Set a random delay range between `5` and `600` seconds. The default is `30-90` seconds.
+9. Open X/Twitter. Posts will get a small `✦ AI` button in the action row.
+10. Hover over `✦ AI` to turn `Auto send` on or off without opening the popup.
+11. Click `✦ AI` to answer one specific post manually. The post is highlighted with a green border, the agent analyzes it, opens the reply composer, and inserts a reply.
+12. The animated character sleeps while the agent is idle and digs while it is working. Drag the character to place it anywhere on the screen. Click it to open the full auto-saved Agent settings, a large countdown, and prominent Start, Pause/Resume, and Stop controls. The panel automatically opens toward the available screen space. The `×` button disables X Agent; re-enable it from the extension popup.
+13. If `Auto send` is off, the agent inserts a draft and stops so you can review it. If `Auto send` is on, it submits and continues to the next post after a random delay.
+14. When the run finishes, AI Helper can play a sound, show a Chrome notification, and open a local report with post links, generated replies, and error statistics.
+
+Only the latest report is stored in `chrome.storage.local`. It is not uploaded anywhere. You can reopen it with `Open last report` in the popup.
+
+Rate a reply from `1` to `5`, optionally describe how it should be improved, and press `Save feedback`. Unsaved edits are never added to memory. Saved records stay in the browser as JSON, and the configured number of relevant examples is included in future prompts for both ChatGPT and OpenRouter. `Reset memory` deletes all records; `Export feedback` downloads them as JSON.
+
+Each memory record can add roughly `100-400` input tokens per reply. The popup shows an estimate for the selected memory limit. This is local prompt adaptation, not model fine-tuning.
+
+Use auto-send carefully. The safer default is draft-only mode.
+
 ## Notes For Public Builds
 
 The public extension source code does not contain a shared API key. `OpenRouter Free` uses the user's OpenRouter API key and routes requests to free models.
@@ -115,6 +147,9 @@ AI Helper - расширение для Chrome, которое помогает 
 - Выпадающее меню само открывается вверх, если поле ввода находится снизу экрана.
 - Перевод можно включить или выключить в popup-окне расширения.
 - AI-чат на страницах помечен как beta и по умолчанию выключен.
+- X Reply Agent Beta может анализировать посты в X, писать черновики ответов и опционально проходить ленту с заданным лимитом.
+- Настройки popup сохраняются автоматически, а секцию X Reply Agent можно свернуть.
+- В отчёте X Agent можно оценивать ответы; локальные оценки влияют на следующие ответы через примеры в prompt.
 - Светлая и темная тема popup-окна.
 - Языки интерфейса: английский, русский, украинский, немецкий, французский, испанский, португальский, турецкий, польский, арабский, китайский и японский.
 
@@ -193,6 +228,35 @@ AI-чат Beta может работать через твою обычную п
 8. Вернись на сайт, который хочешь анализировать, и используй плавающую AI-кнопку.
 
 Такой режим удобен, если у тебя уже есть подписка ChatGPT и ты не хочешь тратить платные API-запросы. Он зависит от веб-интерфейса ChatGPT, поэтому если ChatGPT изменит разметку страницы, сначала обнови вкладку ChatGPT и нужный сайт. Если после этого режим не работает, нужно обновить расширение.
+
+### X Reply Agent Beta
+
+X Reply Agent по умолчанию выключен.
+
+Как использовать:
+
+1. Открой popup расширения.
+2. Включи `X Reply Agent`.
+3. Выбери `OpenRouter` или `ChatGPT subscription` в отдельном селекте провайдера агента.
+4. Выбери язык ответа в общей настройке исходящего `Translate to`. X Agent всегда использует этот язык, даже если X автоматически перевёл пост.
+5. Напиши prompt для агента: тон, длина ответа, эмодзи и чего избегать.
+6. Укажи лимит прохода по ленте, например `3` или `10`.
+7. Выбери, сколько сохранённых примеров памяти отправлять с каждым запросом. `0` отключает память; большие значения увеличивают расход входных токенов, стоимость и время ответа.
+8. Укажи диапазон случайной задержки от `5` до `600` секунд. По умолчанию используется `30-90` секунд.
+9. Открой X/Twitter. У постов появится маленькая кнопка `✦ AI` в панели действий.
+10. Наведи курсор на `✦ AI`, чтобы включить или выключить `Auto send` без открытия popup.
+11. Нажми `✦ AI`, чтобы вручную ответить на конкретный пост. Пост подсветится зелёной рамкой, агент проанализирует его, откроет reply composer и вставит ответ.
+12. Анимированный персонаж спит, пока агент бездействует, и копает во время работы. Перетащи персонажа в удобное место экрана. По клику открываются полные настройки агента с автосохранением, крупный таймер и заметные кнопки Start, Pause/Resume и Stop. Панель сама выбирает направление открытия по свободному месту. Крестик `×` отключает X Agent; включить его снова можно в popup расширения.
+13. Если `Auto send` выключен, агент вставит один черновик и остановится, чтобы ты проверил ответ. Если `Auto send` включён, он отправит ответ и после случайной задержки пойдёт к следующему посту.
+14. После завершения AI Helper может проиграть звук, показать уведомление Chrome и открыть локальный отчёт со ссылками на посты, ответами агента и статистикой ошибок.
+
+В `chrome.storage.local` хранится только последний отчёт, он никуда не отправляется. Повторно открыть его можно кнопкой `Open last report` в popup.
+
+В отчёте можно поставить оценку от `1` до `5`, описать желаемое улучшение и нажать `Save feedback`. Несохранённые изменения в память не попадают. Сохранённые записи остаются локально в JSON, а выбранное количество релевантных примеров добавляется в следующие запросы ChatGPT и OpenRouter. `Reset memory` удаляет память, `Export feedback` выгружает её в JSON.
+
+Одна запись памяти может добавлять примерно `100-400` входных токенов к каждому ответу. Popup показывает приблизительный расход для выбранного лимита. Это локальная адаптация через контекст, а не настоящее дообучение модели.
+
+Авто-отправку лучше использовать аккуратно. Более безопасный режим по умолчанию — только черновик.
 
 ## Важно для публичной сборки
 

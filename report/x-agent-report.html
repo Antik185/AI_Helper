@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X Agent Report · AI Helper</title>
+  <link rel="stylesheet" href="x-agent-report.css">
+</head>
+<body>
+  <main class="report">
+    <header class="report-head">
+      <img src="../icons/icon-128.png" alt="">
+      <div>
+        <div class="eyebrow">AI Helper · Local report</div>
+        <h1>X Agent Report</h1>
+        <p id="runMeta">Loading the latest run…</p>
+      </div>
+    </header>
+
+    <section id="emptyState" class="empty" hidden>
+      No X Agent report has been created yet.
+    </section>
+
+    <section id="reportContent" hidden>
+      <div class="stats" id="stats"></div>
+      <div class="toolbar">
+        <div>
+          <p id="summary"></p>
+          <p id="learningSummary" class="learning-summary"></p>
+        </div>
+        <div class="toolbar-actions">
+          <button id="exportFeedback" type="button">Export feedback</button>
+          <button id="resetFeedback" class="danger-button" type="button">Reset memory</button>
+          <button id="copySummary" type="button">Copy summary</button>
+        </div>
+      </div>
+      <div id="items" class="items"></div>
+    </section>
+  </main>
+  <script src="x-agent-report.js"></script>
+</body>
+</html>

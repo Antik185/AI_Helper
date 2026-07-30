@@ -12,6 +12,17 @@ const FIELDS = [
   'openrouterModel',
   'chatgptModel',
   'aiChatProvider',
+  'xAgentEnabled',
+  'xAgentProvider',
+  'xAgentAutoSubmit',
+  'xAgentSoundEnabled',
+  'xAgentNotifyEnabled',
+  'xAgentOpenReport',
+  'xAgentRunCount',
+  'xAgentMemoryLimit',
+  'xAgentDelayMinSeconds',
+  'xAgentDelayMaxSeconds',
+  'xAgentPrompt',
   'uiLang'
 ];
 
@@ -29,6 +40,17 @@ const DEFAULTS = {
   openrouterModel: 'google/gemini-2.5-flash',
   chatgptModel: 'auto',
   aiChatProvider: 'openrouter',
+  xAgentEnabled: false,
+  xAgentProvider: 'openrouter',
+  xAgentAutoSubmit: false,
+  xAgentSoundEnabled: true,
+  xAgentNotifyEnabled: true,
+  xAgentOpenReport: true,
+  xAgentRunCount: 3,
+  xAgentMemoryLimit: 8,
+  xAgentDelayMinSeconds: 30,
+  xAgentDelayMaxSeconds: 90,
+  xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
   uiLang: 'auto',
   theme: 'dark'
 };
@@ -60,6 +82,61 @@ const SUN_PATH = `<circle cx="12" cy="12" r="4" stroke="currentColor" stroke-wid
 const MOON_PATH = `<path d="M20 14.5A8 8 0 119.5 4 6.5 6.5 0 0020 14.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>`;
 
 let overrideMessages = null;
+let popupLoaded = false;
+let autoSaveTimer = null;
+
+function setAutosaveStatus(state, text) {
+  const label = document.getElementById('autosaveStatus');
+  const box = label?.closest('.autosave-status');
+  if (!label || !box) return;
+  box.classList.toggle('is-saving', state === 'saving');
+  box.classList.toggle('is-error', state === 'error');
+  label.textContent = text;
+}
+
+function scheduleAutoSave(delay = 450) {
+  if (!popupLoaded) return;
+  clearTimeout(autoSaveTimer);
+  setAutosaveStatus('saving', 'Saving changes…');
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
+    save().catch(error => {
+      console.error('[DTH popup] autosave failed:', error);
+      setAutosaveStatus('error', 'Could not save changes');
+    });
+  }, delay);
+}
+
+function applyXAgentCollapsed(collapsed) {
+  const card = document.getElementById('xAgentCard');
+  const button = document.getElementById('xAgentCollapse');
+  if (!card || !button) return;
+  card.classList.toggle('is-collapsed', collapsed);
+  button.setAttribute('aria-expanded', String(!collapsed));
+  button.title = collapsed ? 'Expand X Reply Agent' : 'Collapse X Reply Agent';
+}
+
+function updateMemoryEstimate() {
+  const input = document.getElementById('xAgentMemoryLimit');
+  const hint = document.getElementById('xAgentMemoryEstimate');
+  if (!input || !hint) return;
+  const count = Math.max(0, Math.min(50, Math.round(Number(input.value) || 0)));
+  const low = count * 100;
+  const high = count * 400;
+  hint.textContent = count === 0
+    ? 'Agent memory is disabled. No rated examples will be sent to AI.'
+    : `Approximately ${low.toLocaleString()}–${high.toLocaleString()} extra input tokens per reply. More memory can increase API cost and response time.`;
+}
+
+async function resetXAgentMemory() {
+  const confirmed = confirm('Reset all X Agent memory? Ratings and descriptions will be permanently deleted.');
+  if (!confirmed) return;
+  await chrome.storage.local.remove('xAgentFeedback');
+  const button = document.getElementById('resetXAgentMemory');
+  const original = button.textContent;
+  button.textContent = 'Memory reset';
+  setTimeout(() => { button.textContent = original; }, 1400);
+}
 
 // ----- i18n -----
 
@@ -144,18 +221,31 @@ function populateUiLangSelect(selectEl) {
 
 // ----- Видимость полей провайдера + бейдж FREE -----
 
-function showProviderFields(provider) {
-  document.getElementById('chatgpt-fields').hidden = provider !== 'chatgpt';
+function showProviderFields() {
+  const provider = document.getElementById('provider').value;
+  const aiProvider = document.getElementById('aiChatProvider').value;
+  const xAgentProvider = document.getElementById('xAgentProvider').value;
+  const aiChatEnabled = document.getElementById('aiChatEnabled').checked;
+  const xAgentEnabled = document.getElementById('xAgentEnabled').checked;
+  const needsChatGPT = provider === 'chatgpt' || (aiChatEnabled && aiProvider === 'chatgpt')
+    || (xAgentEnabled && xAgentProvider === 'chatgpt');
+  const needsOpenRouter = provider === 'openrouter' || provider === 'openrouter_free'
+    || (aiChatEnabled && aiProvider === 'openrouter')
+    || (xAgentEnabled && xAgentProvider === 'openrouter');
+  document.getElementById('chatgpt-fields').hidden = !needsChatGPT;
   document.getElementById('gemini-fields').hidden = provider !== 'gemini';
-  document.getElementById('openrouter-fields').hidden = provider !== 'openrouter' && provider !== 'openrouter_free';
+  document.getElementById('openrouter-fields').hidden = !needsOpenRouter;
   document.getElementById('deepl-fields').hidden = provider !== 'deepl';
   document.getElementById('freeBadge').hidden = !FREE_PROVIDERS.has(provider);
 }
 
 function showAiChatTools() {
-  const provider = document.getElementById('aiChatProvider').value;
+  const aiChatUsesChatGPT = document.getElementById('aiChatEnabled').checked
+    && document.getElementById('aiChatProvider').value === 'chatgpt';
+  const xAgentUsesChatGPT = document.getElementById('xAgentEnabled').checked
+    && document.getElementById('xAgentProvider').value === 'chatgpt';
   const tools = document.getElementById('chatgpt-ai-tools');
-  if (tools) tools.hidden = provider !== 'chatgpt';
+  if (tools) tools.hidden = !aiChatUsesChatGPT && !xAgentUsesChatGPT;
 }
 
 function setControlDisabled(id, disabled) {
@@ -169,13 +259,35 @@ function setControlDisabled(id, disabled) {
 function showFeatureStates() {
   const translationOff = !document.getElementById('translationEnabled').checked;
   const aiChatOff = !document.getElementById('aiChatEnabled').checked;
-  [
-    'provider', 'targetLang', 'outboundSourceLang', 'outboundTargetLang',
-    'deeplKey', 'geminiKey',
-    'geminiModel', 'openrouterKey', 'openrouterModel', 'chatgptModel', 'swapBtn'
-  ].forEach(id => setControlDisabled(id, translationOff));
+  const xAgentOff = !document.getElementById('xAgentEnabled').checked;
+  const provider = document.getElementById('provider').value;
+  const aiProvider = document.getElementById('aiChatProvider').value;
+  const xAgentProvider = document.getElementById('xAgentProvider').value;
+
+  ['provider', 'targetLang', 'outboundSourceLang', 'outboundTargetLang', 'swapBtn']
+    .forEach(id => setControlDisabled(id, translationOff));
+  setControlDisabled('geminiKey', translationOff || provider !== 'gemini');
+  setControlDisabled('geminiModel', translationOff || provider !== 'gemini');
+  setControlDisabled('deeplKey', translationOff || provider !== 'deepl');
+
+  const openRouterNeeded = (!translationOff && (provider === 'openrouter' || provider === 'openrouter_free'))
+    || (!aiChatOff && aiProvider === 'openrouter')
+    || (!xAgentOff && xAgentProvider === 'openrouter');
+  const chatGPTNeeded = (!translationOff && provider === 'chatgpt')
+    || (!aiChatOff && aiProvider === 'chatgpt')
+    || (!xAgentOff && xAgentProvider === 'chatgpt');
+  setControlDisabled('openrouterKey', !openRouterNeeded);
+  setControlDisabled('openrouterModel', !openRouterNeeded);
+  setControlDisabled('chatgptModel', !chatGPTNeeded);
+
   setControlDisabled('aiChatProvider', aiChatOff);
-  setControlDisabled('setupChatgptWindow', aiChatOff);
+  setControlDisabled('setupChatgptWindow', !chatGPTNeeded);
+
+  [
+    'xAgentProvider', 'xAgentAutoSubmit', 'xAgentSoundEnabled', 'xAgentNotifyEnabled',
+    'xAgentOpenReport', 'xAgentRunCount', 'xAgentDelayMinSeconds',
+    'xAgentDelayMaxSeconds', 'xAgentMemoryLimit', 'xAgentPrompt', 'startXAgent'
+  ].forEach(id => setControlDisabled(id, xAgentOff));
 }
 
 async function setupChatGPTWindow() {
@@ -194,6 +306,53 @@ async function setupChatGPTWindow() {
     btn.title = e.message || String(e);
     setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2200);
   }
+}
+
+async function sendTabMessageWithRetry(tabId, message, attempts = 12) {
+  let lastError = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message);
+    } catch (e) {
+      lastError = e;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  throw lastError || new Error('Tab is not ready.');
+}
+
+async function startXAgentFromPopup() {
+  const btn = document.getElementById('startXAgent');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  try {
+    await save();
+    let tabs = await chrome.tabs.query({ url: ['https://x.com/*', 'https://twitter.com/*'] });
+    let tab = tabs.find(t => t.active) || tabs[0];
+    if (!tab) {
+      tab = await chrome.tabs.create({ url: 'https://x.com/home', active: true });
+      await new Promise(r => setTimeout(r, 2500));
+    } else {
+      await chrome.tabs.update(tab.id, { active: true });
+      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    await sendTabMessageWithRetry(tab.id, { type: 'xAgentRefresh' }, 8).catch(() => {});
+    await sendTabMessageWithRetry(tab.id, { type: 'xAgentStart' }, 12);
+    btn.textContent = 'Started';
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1400);
+  } catch (e) {
+    btn.textContent = 'Open X and retry';
+    btn.title = e.message || String(e);
+    setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 2400);
+  }
+}
+
+async function openXAgentReport() {
+  await chrome.tabs.create({
+    url: chrome.runtime.getURL('report/x-agent-report.html'),
+    active: true
+  });
 }
 
 // ----- Тема -----
@@ -248,7 +407,10 @@ async function broadcastLocaleChange(uiLang) {
 // ----- Загрузка / сохранение -----
 
 async function load() {
-  const stored = await chrome.storage.sync.get(DEFAULTS);
+  const [stored, local] = await Promise.all([
+    chrome.storage.sync.get(DEFAULTS),
+    chrome.storage.local.get({ xAgentCardCollapsed: false })
+  ]);
   applyTheme(stored.theme);
   await applyLocale(stored.uiLang);
   for (const key of FIELDS) {
@@ -257,35 +419,57 @@ async function load() {
     if (el.type === 'checkbox') el.checked = stored[key] !== false;
     else el.value = stored[key];
   }
-  showProviderFields(stored.provider);
+  showProviderFields();
   showAiChatTools();
   showFeatureStates();
+  updateMemoryEstimate();
+  applyXAgentCollapsed(local.xAgentCardCollapsed === true);
+  popupLoaded = true;
+  setAutosaveStatus('saved', 'Changes are saved automatically');
 }
 
 async function save() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
   const payload = {};
+  const numericRules = {
+    xAgentRunCount: { min: 1, max: 20, fallback: 3 },
+    xAgentMemoryLimit: { min: 0, max: 50, fallback: 8 },
+    xAgentDelayMinSeconds: { min: 5, max: 600, fallback: 30 },
+    xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 }
+  };
   for (const key of FIELDS) {
     const el = document.getElementById(key);
-    if (el) payload[key] = el.type === 'checkbox' ? el.checked : el.value;
+    if (!el) continue;
+    if (el.type === 'checkbox') payload[key] = el.checked;
+    else if (el.type === 'number') {
+      const rule = numericRules[key] || { min: 1, max: Number.MAX_SAFE_INTEGER, fallback: 1 };
+      const parsed = el.value.trim() === '' ? NaN : Number(el.value);
+      const value = Number.isFinite(parsed) ? Math.round(parsed) : rule.fallback;
+      payload[key] = Math.max(rule.min, Math.min(rule.max, value));
+      el.value = payload[key];
+    }
+    else payload[key] = el.value;
+  }
+  if (payload.xAgentDelayMinSeconds > payload.xAgentDelayMaxSeconds) {
+    [payload.xAgentDelayMinSeconds, payload.xAgentDelayMaxSeconds] =
+      [payload.xAgentDelayMaxSeconds, payload.xAgentDelayMinSeconds];
+    document.getElementById('xAgentDelayMinSeconds').value = payload.xAgentDelayMinSeconds;
+    document.getElementById('xAgentDelayMaxSeconds').value = payload.xAgentDelayMaxSeconds;
   }
   // theme сохраняется отдельно — при клике тогглера, чтобы было моментально.
   payload.theme = document.body.dataset.theme;
   await chrome.storage.sync.set(payload);
-  const btn = document.getElementById('save');
-  const txt = btn.querySelector('.save-text');
-  const originalText = txt.textContent;
-  btn.classList.add('saved');
-  txt.textContent = t('savedStatus').replace(/^✓\s*/, '');
-  setTimeout(() => {
-    btn.classList.remove('saved');
-    txt.textContent = originalText;
-  }, 1500);
+  setAutosaveStatus('saved', 'Saved automatically');
 }
 
 // ----- Init -----
 
 document.addEventListener('DOMContentLoaded', () => {
-  load();
+  load().catch(error => {
+    console.error('[DTH popup] load failed:', error);
+    setAutosaveStatus('error', 'Could not load settings');
+  });
 
   // Тема
   document.getElementById('themeToggle').addEventListener('click', async () => {
@@ -302,17 +486,46 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Провайдер
-  document.getElementById('provider').addEventListener('change', (e) => {
-    showProviderFields(e.target.value);
+  document.getElementById('provider').addEventListener('change', () => {
+    showProviderFields();
+    showFeatureStates();
   });
 
-  document.getElementById('translationEnabled').addEventListener('change', showFeatureStates);
-  document.getElementById('aiChatEnabled').addEventListener('change', showFeatureStates);
+  document.getElementById('translationEnabled').addEventListener('change', () => {
+    showProviderFields();
+    showFeatureStates();
+  });
+  document.getElementById('aiChatEnabled').addEventListener('change', () => {
+    showProviderFields();
+    showAiChatTools();
+    showFeatureStates();
+  });
+  document.getElementById('xAgentEnabled').addEventListener('change', () => {
+    showProviderFields();
+    showAiChatTools();
+    showFeatureStates();
+  });
   document.getElementById('aiChatProvider').addEventListener('change', () => {
+    showProviderFields();
+    showAiChatTools();
+    showFeatureStates();
+  });
+  document.getElementById('xAgentProvider').addEventListener('change', () => {
+    showProviderFields();
     showAiChatTools();
     showFeatureStates();
   });
   document.getElementById('setupChatgptWindow').addEventListener('click', setupChatGPTWindow);
+  document.getElementById('startXAgent').addEventListener('click', startXAgentFromPopup);
+  document.getElementById('openXAgentReport').addEventListener('click', openXAgentReport);
+  document.getElementById('resetXAgentMemory').addEventListener('click', resetXAgentMemory);
+  document.getElementById('xAgentMemoryLimit').addEventListener('input', updateMemoryEstimate);
+  document.getElementById('xAgentCollapse').addEventListener('click', async () => {
+    const card = document.getElementById('xAgentCard');
+    const collapsed = !card.classList.contains('is-collapsed');
+    applyXAgentCollapsed(collapsed);
+    await chrome.storage.local.set({ xAgentCardCollapsed: collapsed });
+  });
 
   // Свап языков
   document.getElementById('swapBtn').addEventListener('click', () => {
@@ -324,8 +537,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const tmp = src.value;
     src.value = tgt.value;
     tgt.value = tmp;
+    scheduleAutoSave(0);
   });
 
-  // Сохранение
-  document.getElementById('save').addEventListener('click', save);
+  for (const key of FIELDS) {
+    if (key === 'uiLang') continue;
+    const el = document.getElementById(key);
+    if (!el) continue;
+    el.addEventListener(el.matches('input[type="text"], input[type="password"], input[type="number"], textarea') ? 'input' : 'change', () => {
+      scheduleAutoSave();
+    });
+  }
 });

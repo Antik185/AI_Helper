@@ -140,6 +140,124 @@
       <small class="hint-inline">Keeps ChatGPT open in a tiny helper window for subscription-based AI chat.</small>
     </div>
 
+    <div class="card x-agent-card" id="xAgentCard">
+      <div class="card-head">
+        <span class="chip" aria-hidden="true">X</span>
+        <span>X Reply Agent</span>
+        <span class="badge-beta">BETA</span>
+        <button id="xAgentCollapse" class="card-collapse" type="button" aria-expanded="true" aria-controls="xAgentBody" title="Collapse X Reply Agent">
+          <span aria-hidden="true">⌃</span>
+        </button>
+      </div>
+
+      <div id="xAgentBody" class="x-agent-body">
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Enable agent</div>
+          <div class="feature-sub">Show AI Reply buttons under X posts.</div>
+        </div>
+        <label class="switch">
+          <input id="xAgentEnabled" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Agent provider</span>
+        <div class="select">
+          <select id="xAgentProvider">
+            <option value="openrouter">OpenRouter</option>
+            <option value="chatgpt">ChatGPT subscription</option>
+          </select>
+        </div>
+        <small class="hint-inline">This provider is independent from AI Chat.</small>
+      </div>
+
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Auto send</div>
+          <div class="feature-sub">If off, the reply is only inserted as a draft.</div>
+        </div>
+        <label class="switch">
+          <input id="xAgentAutoSubmit" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Completion sound</div>
+          <div class="feature-sub">Play a short sound after a feed run or manual reply.</div>
+        </div>
+        <label class="switch">
+          <input id="xAgentSoundEnabled" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Desktop notification</div>
+          <div class="feature-sub">Show a Chrome notification when the run finishes.</div>
+        </div>
+        <label class="switch">
+          <input id="xAgentNotifyEnabled" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Open report after run</div>
+          <div class="feature-sub">Open a local summary with post links and generated replies.</div>
+        </div>
+        <label class="switch">
+          <input id="xAgentOpenReport" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Feed run limit</span>
+        <input id="xAgentRunCount" class="text-field" type="number" min="1" max="20" step="1" value="3">
+        <small class="hint-inline">How many visible feed posts the agent should answer when you press Start on X.</small>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Memory examples per reply</span>
+        <input id="xAgentMemoryLimit" class="text-field" type="number" min="0" max="50" step="1" value="8">
+        <small id="xAgentMemoryEstimate" class="hint-inline"></small>
+        <small class="hint-inline">The agent stores all saved ratings locally, but sends only this many relevant JSON examples to AI. Set 0 to disable memory.</small>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Random delay between replies</span>
+        <div class="number-pair">
+          <label>
+            <span>Min, sec</span>
+            <input id="xAgentDelayMinSeconds" class="text-field" type="number" min="5" max="600" step="1" value="30">
+          </label>
+          <span class="number-pair-separator">to</span>
+          <label>
+            <span>Max, sec</span>
+            <input id="xAgentDelayMaxSeconds" class="text-field" type="number" min="5" max="600" step="1" value="90">
+          </label>
+        </div>
+        <small class="hint-inline">A new random delay is chosen after every sent reply. Maximum: 10 minutes.</small>
+      </div>
+
+      <button id="startXAgent" class="pp-secondary" type="button">Start X Agent</button>
+      <button id="openXAgentReport" class="pp-secondary" type="button">Open last report</button>
+      <button id="resetXAgentMemory" class="pp-secondary pp-danger" type="button">Reset agent memory</button>
+
+      <div class="field">
+        <span class="field-label">Agent prompt</span>
+        <textarea id="xAgentPrompt" class="text-field text-area" rows="4"></textarea>
+        <small class="hint-inline">Tell the agent how to reply: tone, length, emojis, and what to avoid. Reply language always follows the outgoing “Translate to” setting below.</small>
+      </div>
+      </div>
+    </div>
+
     <!-- Язык входящих -->
     <div class="field">
       <span class="field-label">
@@ -184,14 +302,10 @@
       </div>
     </div>
 
-    <!-- Кнопка сохранения -->
-    <button class="pp-save" id="save" type="button">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4"
-              stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="save-text" data-i18n="saveButton"></span>
-    </button>
+    <div class="autosave-status" aria-live="polite">
+      <span class="autosave-dot" aria-hidden="true"></span>
+      <span id="autosaveStatus">Changes are saved automatically</span>
+    </div>
 
     <!-- Подсказка -->
     <div class="pp-hint">

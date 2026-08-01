@@ -15,7 +15,7 @@ const DEFAULTS = {
   openrouterModel: 'google/gemini-2.5-flash',
   chatgptModel: 'auto',
   aiChatProvider: 'openrouter',
-  xAgentEnabled: false,
+  xAgentEnabled: true,
   xAgentProvider: 'openrouter',
   xAgentAutoSubmit: false,
   xAgentSoundEnabled: true,

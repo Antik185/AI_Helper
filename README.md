@@ -97,12 +97,12 @@ This mode is useful if you already pay for ChatGPT and do not want every request
 
 ### X Reply Agent Beta
 
-X Reply Agent is disabled by default.
+X Reply Agent is enabled by default. You can turn it off at any time from the extension popup or with the close button on its X panel.
 
 To use it:
 
 1. Open the extension popup.
-2. Turn on `X Reply Agent`.
+2. Make sure `X Reply Agent` is enabled. It is enabled by default on new installations.
 3. Choose `OpenRouter` or `ChatGPT subscription` in the separate Agent provider selector.
 4. Choose the reply language in the outgoing `Translate to` setting. X Agent always uses this language, even when X automatically translates a post.
 5. Write your agent prompt: tone, length, emojis, and what to avoid.
@@ -231,12 +231,12 @@ AI-чат Beta может работать через твою обычную п
 
 ### X Reply Agent Beta
 
-X Reply Agent по умолчанию выключен.
+X Reply Agent по умолчанию включён. Его можно в любой момент выключить в popup расширения или крестиком на панели агента в X.
 
 Как использовать:
 
 1. Открой popup расширения.
-2. Включи `X Reply Agent`.
+2. Убедись, что `X Reply Agent` включён. В новых установках он включён по умолчанию.
 3. Выбери `OpenRouter` или `ChatGPT subscription` в отдельном селекте провайдера агента.
 4. Выбери язык ответа в общей настройке исходящего `Translate to`. X Agent всегда использует этот язык, даже если X автоматически перевёл пост.
 5. Напиши prompt для агента: тон, длина ответа, эмодзи и чего избегать.

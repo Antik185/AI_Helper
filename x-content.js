@@ -19,6 +19,8 @@ const X_AGENT_CONTROL_CLASS = 'dth-x-agent-control';
 const X_AGENT_ACTIVE_CLASS = 'dth-x-agent-active';
 const X_AGENT_PANEL_CLASS = 'dth-x-agent-panel';
 const X_AGENT_PROCESSED_ATTR = 'data-dth-x-agent-done';
+const X_POST_TRANSLATE_BUTTON_CLASS = 'dth-x-post-translate-btn';
+const X_POST_TRANSLATION_CLASS = 'dth-x-post-translation';
 
 const LANG_LABELS = { uk: 'UA', be: 'BY', kk: 'KZ', ja: 'JP', zh: 'CN' };
 
@@ -42,6 +44,8 @@ const X_AGENT_DAILY_STATS_KEY = 'dthXAgentDailyStats';
 const X_AGENT_POSITION_KEY = 'dthXAgentPosition';
 
 let overrideMessages = null;
+let xPostTranslateScanTimer = null;
+const xPostTranslationStates = new Map();
 
 // --- i18n ---
 
@@ -270,6 +274,372 @@ function findTweetActionGroup(article) {
   const reply = findReplyButton(article);
   if (!reply) return null;
   return reply.closest('[role="group"]') || reply.parentElement?.parentElement || reply.parentElement;
+}
+
+function findPrimaryTweetTextBlock(article) {
+  return Array.from(article.querySelectorAll('[data-testid="tweetText"]'))
+    .find(block => block.closest(TWEET_SELECTOR) === article) || null;
+}
+
+function getStructuredTweetText(block) {
+  if (!block) return '';
+  const clone = block.cloneNode(true);
+  clone.querySelectorAll('br').forEach(br => br.replaceWith(document.createTextNode('\n')));
+  clone.querySelectorAll('img').forEach(image => {
+    const label = image.getAttribute('alt') || image.getAttribute('aria-label') || '';
+    image.replaceWith(document.createTextNode(label));
+  });
+  clone.querySelectorAll('[role="img"][aria-label]').forEach(element => {
+    if (element.textContent?.trim()) return;
+    element.replaceWith(document.createTextNode(element.getAttribute('aria-label') || ''));
+  });
+  return clone.textContent || block.innerText || block.textContent || '';
+}
+
+function getTweetInlineLinks(block) {
+  if (!block) return [];
+  const seen = new Set();
+  return Array.from(block.querySelectorAll('a[href]')).map(anchor => {
+    const label = (anchor.textContent || anchor.getAttribute('aria-label') || '').trim();
+    const href = anchor.href || anchor.getAttribute('href') || '';
+    if (!label || !href) return null;
+    const key = `${label}\u0000${href}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    return { label, href };
+  }).filter(Boolean);
+}
+
+function createXPostTranslationPlan(text, inlineLinks = []) {
+  const value = String(text || '').slice(0, 12000);
+  const newline = value.includes('\r\n') ? '\r\n' : (value.includes('\r') ? '\r' : '\n');
+  const lines = value.split(/\r\n|\n|\r/);
+  const entries = [];
+  const protectedValues = new Map();
+  let tokenIndex = 0;
+
+  const protectValue = (match, kind) => {
+    const token = `[[DTH_X_${kind}_${tokenIndex++}_9F4A]]`;
+    protectedValues.set(token, match);
+    return token;
+  };
+
+  const protectInlineFormatting = source => {
+    let protectedText = source;
+    const linkLabels = inlineLinks
+      .map(link => link.label)
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+    for (const label of linkLabels) {
+      if (!protectedText.includes(label)) continue;
+      protectedText = protectedText.split(label).join(protectValue(label, 'LINK'));
+    }
+    if (typeof Intl.Segmenter === 'function') {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+      protectedText = Array.from(segmenter.segment(protectedText), item => (
+        /[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(item.segment)
+          ? protectValue(item.segment, 'EMOJI')
+          : item.segment
+      )).join('');
+    }
+    return protectedText.replace(/\t+| {2,}/g, match => protectValue(match, 'SPACE'));
+  };
+
+  lines.forEach((line, lineIndex) => {
+    if (!line.trim()) return;
+    const leading = line.match(/^[\t ]*/)?.[0] || '';
+    const trailing = line.match(/[\t ]*$/)?.[0] || '';
+    const core = line.slice(leading.length, line.length - trailing.length);
+    entries.push({ lineIndex, leading, trailing, protectedCore: protectInlineFormatting(core) });
+  });
+
+  return {
+    value,
+    newline,
+    lines,
+    entries,
+    protectedValues,
+    segments: entries.map(entry => entry.protectedCore)
+  };
+}
+
+function restoreXPostProtectedValues(text, protectedValues) {
+  let value = String(text || '');
+  for (const [token, original] of protectedValues) value = value.split(token).join(original);
+  return value;
+}
+
+function rebuildXPostTranslation(plan, translations) {
+  const outputLines = plan.lines.slice();
+  plan.entries.forEach((entry, index) => {
+    const translated = Array.isArray(translations) ? translations[index] : '';
+    const restored = restoreXPostProtectedValues(
+      translated || entry.protectedCore,
+      plan.protectedValues
+    );
+    const core = restored.replace(/\s*(?:\r\n|\n|\r)+\s*/g, ' ').trim();
+    outputLines[entry.lineIndex] = `${entry.leading}${core}${entry.trailing}`;
+  });
+  return outputLines.join(plan.newline);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function trimLinkPunctuation(value) {
+  const match = String(value).match(/^(.*?)([),.!?:;]+)$/u);
+  if (!match || !match[1]) return { linkText: value, suffix: '' };
+  return { linkText: match[1], suffix: match[2] };
+}
+
+function resolveTranslatedLinkHref(text, inlineLinks) {
+  const exact = inlineLinks.find(link => link.label === text)
+    || inlineLinks.find(link => link.label.toLowerCase() === text.toLowerCase());
+  if (exact) return exact.href;
+  if (/^@[a-z0-9_]{1,15}$/i.test(text)) return `https://x.com/${text.slice(1)}`;
+  if (/^#[\p{L}\p{N}_]+$/u.test(text)) {
+    return `https://x.com/hashtag/${encodeURIComponent(text.slice(1))}`;
+  }
+  if (/^https?:\/\//i.test(text)) return text;
+  if (/^www\./i.test(text)) return `https://${text}`;
+  if (/^(?:[\p{L}\p{N}-]+\.)+[a-z]{2,}(?:\/|$)/iu.test(text)) return `https://${text}`;
+  return '';
+}
+
+function appendTranslatedPostLink(container, text, href) {
+  const anchor = document.createElement('a');
+  anchor.className = 'dth-x-post-translation-link';
+  anchor.href = href;
+  anchor.textContent = text;
+  anchor.rel = 'noopener noreferrer';
+  anchor.addEventListener('mousedown', event => event.stopPropagation());
+  anchor.addEventListener('click', event => event.stopPropagation());
+  container.append(anchor);
+}
+
+function renderXPostTranslation(container, text, inlineLinks) {
+  const labels = inlineLinks
+    .map(link => link.label)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp);
+  const generic = 'https?:\\/\\/[^\\s]+|www\\.[^\\s]+|(?:[\\p{L}\\p{N}-]+\\.)+[a-z]{2,}(?:\\/[^\\s]*)?|@[a-z0-9_]{1,15}|#[\\p{L}\\p{N}_]+';
+  const matcher = new RegExp(labels.length ? `${labels.join('|')}|${generic}` : generic, 'giu');
+
+  let cursor = 0;
+  for (const match of String(text || '').matchAll(matcher)) {
+    if (match.index > cursor) container.append(document.createTextNode(text.slice(cursor, match.index)));
+    const { linkText, suffix } = trimLinkPunctuation(match[0]);
+    const href = resolveTranslatedLinkHref(linkText, inlineLinks);
+    if (href) appendTranslatedPostLink(container, linkText, href);
+    else container.append(document.createTextNode(linkText));
+    if (suffix) container.append(document.createTextNode(suffix));
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) container.append(document.createTextNode(text.slice(cursor)));
+}
+
+function getXPostKey(article) {
+  const text = getStructuredTweetText(findPrimaryTweetTextBlock(article));
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${getTweetUrl(article)}#${(hash >>> 0).toString(36)}`;
+}
+
+function getXPostTranslateTitle(translated = false) {
+  const key = translated ? 'restorePostTitle' : 'translatePostTitle';
+  const localized = t(key);
+  if (localized && localized !== key) return localized;
+  return translated ? 'Restore original post' : 'Translate this post';
+}
+
+function setXPostTranslateButtonState(button, state, title) {
+  if (!button) return;
+  button.dataset.state = state;
+  button.disabled = state === 'loading';
+  const label = title || getXPostTranslateTitle(state === 'translated');
+  button.title = label;
+  button.setAttribute('aria-label', label);
+}
+
+function restoreXPostTranslation(article, { removeButton = false } = {}) {
+  const state = xPostTranslationStates.get(article);
+  if (state) {
+    state.requestId++;
+    if (state.originalBlock?.isConnected) {
+      state.originalBlock.style.display = state.originalDisplay;
+    }
+    state.translationElement?.remove();
+    state.translationElement = null;
+    state.originalBlock = null;
+    state.translated = false;
+    setXPostTranslateButtonState(state.button, 'idle');
+    if (removeButton) {
+      state.button?.remove();
+      xPostTranslationStates.delete(article);
+    }
+  }
+  article.querySelectorAll(`.${X_POST_TRANSLATION_CLASS}`).forEach(element => element.remove());
+  if (removeButton) article.querySelectorAll(`.${X_POST_TRANSLATE_BUTTON_CLASS}`).forEach(button => button.remove());
+}
+
+function clearXPostTranslateButtons() {
+  for (const [article] of xPostTranslationStates) restoreXPostTranslation(article, { removeButton: true });
+  xPostTranslationStates.clear();
+  document.querySelectorAll(`.${X_POST_TRANSLATE_BUTTON_CLASS}`).forEach(button => button.remove());
+}
+
+function cleanupStaleXPostTranslationUi() {
+  document.querySelectorAll(`.${X_POST_TRANSLATION_CLASS}`).forEach(element => {
+    const original = element.previousElementSibling;
+    if (original?.matches('[data-testid="tweetText"]') && original.style.display === 'none') {
+      original.style.removeProperty('display');
+    }
+    element.remove();
+  });
+  document.querySelectorAll(`.${X_POST_TRANSLATE_BUTTON_CLASS}`).forEach(button => button.remove());
+}
+
+async function toggleXPostTranslation(article, button) {
+  let state = xPostTranslationStates.get(article);
+  if (!state) {
+    state = { key: getXPostKey(article), requestId: 0, translated: false, button };
+    xPostTranslationStates.set(article, state);
+  }
+  state.button = button;
+  if (state.translated) {
+    restoreXPostTranslation(article);
+    return;
+  }
+
+  const originalBlock = findPrimaryTweetTextBlock(article);
+  const originalText = getStructuredTweetText(originalBlock);
+  if (!originalBlock || !originalText.trim()) return;
+
+  const inlineLinks = getTweetInlineLinks(originalBlock);
+  const plan = createXPostTranslationPlan(originalText, inlineLinks);
+  if (!plan.segments.length) return;
+  const requestId = ++state.requestId;
+  setXPostTranslateButtonState(button, 'loading', t('translatingButton') || 'Translating…');
+
+  try {
+    const targetLang = STATE.settings?.targetLang || 'ru';
+    const response = await callBackground({
+      type: 'translateSelectionSegments',
+      segments: plan.segments,
+      targetLang,
+      sourceLang: 'auto',
+      preserveFormatting: true
+    });
+    if (requestId !== state.requestId || !article.isConnected || !originalBlock.isConnected) return;
+    if (state.key !== getXPostKey(article)) return;
+
+    const translatedText = rebuildXPostTranslation(plan, response.translations);
+    const translatedBlock = originalBlock.cloneNode(false);
+    translatedBlock.removeAttribute('id');
+    translatedBlock.removeAttribute('data-testid');
+    translatedBlock.classList.add(X_POST_TRANSLATION_CLASS);
+    translatedBlock.setAttribute('lang', targetLang);
+    translatedBlock.setAttribute('dir', 'auto');
+    renderXPostTranslation(translatedBlock, translatedText, inlineLinks);
+
+    state.originalBlock = originalBlock;
+    state.originalDisplay = originalBlock.style.display;
+    state.translationElement = translatedBlock;
+    state.translated = true;
+    originalBlock.style.display = 'none';
+    originalBlock.insertAdjacentElement('afterend', translatedBlock);
+    setXPostTranslateButtonState(state.button, 'translated');
+  } catch (error) {
+    if (requestId !== state.requestId) return;
+    setXPostTranslateButtonState(
+      state.button,
+      'error',
+      `${t('errorPrefix') || 'Error: '}${error.message || String(error)}`
+    );
+    setTimeout(() => {
+      if (state.requestId === requestId && !state.translated) {
+        setXPostTranslateButtonState(state.button, 'idle');
+      }
+    }, 2500);
+  }
+}
+
+function createXPostTranslateButton(article, key) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = X_POST_TRANSLATE_BUTTON_CLASS;
+  button.dataset.tweetKey = key;
+  setXPostTranslateButtonState(button, 'idle');
+  button.addEventListener('mousedown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  button.addEventListener('click', async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    await toggleXPostTranslation(article, button);
+  });
+  return button;
+}
+
+function ensureXPostTranslateButtons() {
+  if (!STATE.settings || STATE.settings.translationEnabled === false) {
+    clearXPostTranslateButtons();
+    return;
+  }
+
+  for (const [article] of xPostTranslationStates) {
+    if (!article.isConnected) xPostTranslationStates.delete(article);
+  }
+
+  let added = 0;
+  for (const article of document.querySelectorAll(TWEET_SELECTOR)) {
+    if (added >= 30) break;
+    const rect = article.getBoundingClientRect();
+    if (rect.bottom < -500 || rect.top > window.innerHeight + 1200) continue;
+    if (isPromotedTweet(article)) continue;
+
+    const textBlock = findPrimaryTweetTextBlock(article);
+    const userName = article.querySelector('[data-testid="User-Name"]');
+    const nameHost = userName?.firstElementChild || userName;
+    if (!textBlock || !nameHost) continue;
+
+    const key = getXPostKey(article);
+    let button = article.querySelector(`.${X_POST_TRANSLATE_BUTTON_CLASS}`);
+    const state = xPostTranslationStates.get(article);
+    if (button && button.dataset.tweetKey !== key) {
+      restoreXPostTranslation(article, { removeButton: true });
+      button = null;
+    }
+    if (state?.translated && (!state.translationElement?.isConnected || state.originalBlock !== textBlock)) {
+      restoreXPostTranslation(article);
+    }
+    if (button) {
+      const current = xPostTranslationStates.get(article);
+      setXPostTranslateButtonState(button, current?.translated ? 'translated' : 'idle');
+      continue;
+    }
+
+    button = createXPostTranslateButton(article, key);
+    nameHost.append(button);
+    const current = xPostTranslationStates.get(article);
+    if (current) current.button = button;
+    added++;
+  }
+}
+
+function scheduleXPostTranslateScan(delay = 500) {
+  if (xPostTranslateScanTimer) return;
+  xPostTranslateScanTimer = setTimeout(() => {
+    xPostTranslateScanTimer = null;
+    try { ensureXPostTranslateButtons(); }
+    catch (error) { console.debug('[DTH X] post translate scan failed', error); }
+  }, delay);
 }
 
 function getAgentRunLimit() {
@@ -1555,7 +1925,11 @@ function scheduleXAgentScan(delay = 900) {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return;
   const uiLangChanged = changes.uiLang !== undefined;
+  const postTranslationChanged = changes.translationEnabled !== undefined
+    || changes.targetLang !== undefined;
   loadSettings().then(() => {
+    if (postTranslationChanged) clearXPostTranslateButtons();
+    scheduleXPostTranslateScan(100);
     if (STATE.settings && STATE.settings.xAgentEnabled === true) {
       ensureXAgentPanel();
       syncXAgentSettingsControls();
@@ -1595,6 +1969,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     populateDropdown();
     refreshButtonLabel();
     if (inputMainBtn) inputMainBtn.title = t('translateInputTitle') || 'Translate what I typed';
+    ensureXPostTranslateButtons();
   }
 });
 
@@ -1619,8 +1994,10 @@ window.addEventListener('resize', positionXAgentPanel);
 
 // --- Init ---
 
+cleanupStaleXPostTranslationUi();
 loadSettings().then(() => {
   setupButton();
+  scheduleXPostTranslateScan(350);
   if (STATE.settings && STATE.settings.xAgentEnabled === true) {
     ensureXAgentPanel();
     scheduleXAgentScan(1200);
@@ -1630,6 +2007,7 @@ loadSettings().then(() => {
 // X — SPA, перерисовывает много, следим за DOM и обновляем позицию.
 const observer = new MutationObserver(() => {
   positionButton();
+  scheduleXPostTranslateScan(650);
   scheduleXAgentScan(1000);
 });
 observer.observe(document.body, { childList: true, subtree: true });

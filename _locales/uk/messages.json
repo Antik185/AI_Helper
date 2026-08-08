@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ Перекладаю…" },
   "translateMsgTitle":    { "message": "Перекласти це повідомлення" },
   "translateInputTitle":  { "message": "Перекласти те, що я написав, і вставити назад" },
+  "translatePostTitle":   { "message": "Перекласти цей допис" },
+  "restorePostTitle":     { "message": "Повернути оригінал допису" },
   "errorPrefix":          { "message": "Помилка: " },
 
   "uiLangLabel":          { "message": "Мова інтерфейсу" },

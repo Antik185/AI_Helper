@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ 翻訳中…" },
   "translateMsgTitle":    { "message": "このメッセージを翻訳" },
   "translateInputTitle":  { "message": "入力した内容を翻訳して貼り付け" },
+  "translatePostTitle":   { "message": "この投稿を翻訳" },
+  "restorePostTitle":     { "message": "元の投稿に戻す" },
   "errorPrefix":          { "message": "エラー: " },
 
   "uiLangLabel":          { "message": "インターフェイス言語" },

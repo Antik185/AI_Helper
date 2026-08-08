@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ Çeviriyor…" },
   "translateMsgTitle":    { "message": "Bu mesajı çevir" },
   "translateInputTitle":  { "message": "Yazdığımı çevir ve geri yapıştır" },
+  "translatePostTitle":   { "message": "Bu gönderiyi çevir" },
+  "restorePostTitle":     { "message": "Orijinal gönderiyi geri yükle" },
   "errorPrefix":          { "message": "Hata: " },
 
   "uiLangLabel":          { "message": "Arayüz dili" },

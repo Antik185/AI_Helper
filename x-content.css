@@ -136,6 +136,98 @@
   color: #71767b;
 }
 
+.dth-x-post-translate-btn {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin-inline-start: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  background: transparent;
+  color: #71767b;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background .14s ease, color .14s ease, transform .14s ease;
+}
+
+.dth-x-post-translate-btn::before {
+  content: "🌐";
+  font-size: 12px;
+  line-height: 1;
+}
+
+.dth-x-post-translate-btn:hover,
+.dth-x-post-translate-btn:focus-visible {
+  background: rgba(29, 155, 240, .14);
+  color: #1d9bf0;
+  transform: scale(1.08);
+}
+
+.dth-x-post-translate-btn:focus-visible {
+  box-shadow: 0 0 0 2px rgba(29, 155, 240, .3);
+}
+
+.dth-x-post-translate-btn[data-state="translated"] {
+  background: rgba(29, 155, 240, .12);
+  color: #1d9bf0;
+}
+
+.dth-x-post-translate-btn[data-state="translated"]::before {
+  content: "↩";
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.dth-x-post-translate-btn[data-state="loading"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(29, 155, 240, .28);
+  border-top-color: #1d9bf0;
+  border-radius: 50%;
+  animation: dth-x-post-spin .7s linear infinite;
+}
+
+.dth-x-post-translate-btn[data-state="error"] {
+  background: rgba(244, 63, 94, .13);
+  color: #f43f5e;
+}
+
+.dth-x-post-translate-btn[data-state="error"]::before {
+  content: "!";
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dth-x-post-translate-btn:disabled { cursor: wait; }
+
+.dth-x-post-translation {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+}
+
+.dth-x-post-translation-link {
+  color: #1d9bf0 !important;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.dth-x-post-translation-link:hover,
+.dth-x-post-translation-link:focus-visible {
+  text-decoration: underline;
+}
+
+@keyframes dth-x-post-spin {
+  to { transform: rotate(360deg); }
+}
+
 .dth-x-agent-control {
   align-self: center;
   display: inline-flex;

@@ -9,6 +9,8 @@
   "translatingButton":    { "message": "⏳ Перевод…" },
   "translateMsgTitle":    { "message": "Перевести это сообщение" },
   "translateInputTitle":  { "message": "Перевести то, что я набрал, и вставить обратно" },
+  "translatePostTitle":   { "message": "Перевести этот пост" },
+  "restorePostTitle":     { "message": "Вернуть оригинал поста" },
   "errorPrefix":          { "message": "Ошибка: " },
 
   "uiLangLabel":          { "message": "Язык интерфейса" },

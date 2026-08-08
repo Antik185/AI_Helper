@@ -481,7 +481,12 @@
     pageUndo.textContent = 'Undo';
     pageUndo.addEventListener('click', () => {
       state.autoPending = false;
-      restorePage({ hideBar: false });
+      if (state.translating || state.translated || state.originals.size > 0) {
+        restorePage({ hideBar: false });
+        return;
+      }
+      const targetLang = pageLanguage?.value || state.targetLang || 'ru';
+      translateWholePage(targetLang);
     });
 
     const minimize = document.createElement('button');
@@ -529,8 +534,17 @@
   function setPageControlsBusy(busy) {
     if (pageLanguage) pageLanguage.disabled = busy;
     if (pageUndo) {
-      pageUndo.disabled = !busy && state.originals.size === 0;
-      pageUndo.textContent = busy ? 'Cancel' : 'Undo';
+      pageUndo.disabled = false;
+      if (busy) {
+        pageUndo.textContent = 'Cancel';
+        pageUndo.title = 'Cancel page translation';
+      } else if (state.translated || state.originals.size > 0) {
+        pageUndo.textContent = 'Undo';
+        pageUndo.title = 'Restore original page';
+      } else {
+        pageUndo.textContent = 'Translate';
+        pageUndo.title = 'Translate page again';
+      }
     }
   }
 

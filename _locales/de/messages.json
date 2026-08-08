@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ Übersetze…" },
   "translateMsgTitle":    { "message": "Diese Nachricht übersetzen" },
   "translateInputTitle":  { "message": "Eingegebenen Text übersetzen und einfügen" },
+  "translatePostTitle":   { "message": "Diesen Beitrag übersetzen" },
+  "restorePostTitle":     { "message": "Originalbeitrag wiederherstellen" },
   "errorPrefix":          { "message": "Fehler: " },
 
   "uiLangLabel":          { "message": "Sprache der Oberfläche" },

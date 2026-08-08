@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ جاري الترجمة…" },
   "translateMsgTitle":    { "message": "ترجم هذه الرسالة" },
   "translateInputTitle":  { "message": "ترجم ما كتبته ولصقه" },
+  "translatePostTitle":   { "message": "ترجمة هذا المنشور" },
+  "restorePostTitle":     { "message": "استعادة المنشور الأصلي" },
   "errorPrefix":          { "message": "خطأ: " },
 
   "uiLangLabel":          { "message": "لغة الواجهة" },

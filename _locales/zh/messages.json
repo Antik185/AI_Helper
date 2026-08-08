@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ 翻译中…" },
   "translateMsgTitle":    { "message": "翻译这条消息" },
   "translateInputTitle":  { "message": "翻译我输入的内容并粘贴回来" },
+  "translatePostTitle":   { "message": "翻译此帖子" },
+  "restorePostTitle":     { "message": "恢复原帖" },
   "errorPrefix":          { "message": "错误：" },
 
   "uiLangLabel":          { "message": "界面语言" },

@@ -8,6 +8,7 @@ It started as a Discord translation helper, but now also supports X/Twitter and 
 
 - Translate Discord messages inline.
 - Translate your own text before sending it in Discord, X/Twitter, Google Search, YouTube, and many other sites.
+- Translate one X post in place with the small globe button after the author name; click again to restore the original.
 - Quick target-language dropdown next to the translate button.
 - Movable translate button: drag it by the small handle, double-click the handle to reset its position.
 - Smart dropdown direction: opens upward when the input is near the bottom of the screen.
@@ -155,6 +156,7 @@ AI Helper - расширение для Chrome, которое помогает 
 
 - Перевод сообщений в Discord прямо под оригинальным сообщением.
 - Перевод твоего текста перед отправкой в Discord, X/Twitter, Google Search, YouTube и на других сайтах.
+- Перевод отдельного поста X на месте через маленькую кнопку-глобус после имени автора; повторный клик возвращает оригинал.
 - Быстрый выбор языка через стрелочку рядом с кнопкой перевода.
 - Кнопку перевода можно двигать: тяни за маленькую ручку, двойной клик по ручке сбрасывает позицию.
 - Выпадающее меню само открывается вверх, если поле ввода находится снизу экрана.

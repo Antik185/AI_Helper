@@ -8,6 +8,8 @@
   "translatingButton":    { "message": "⏳ Traduzindo…" },
   "translateMsgTitle":    { "message": "Traduzir esta mensagem" },
   "translateInputTitle":  { "message": "Traduzir o que digitei e colar de volta" },
+  "translatePostTitle":   { "message": "Traduzir esta publicação" },
+  "restorePostTitle":     { "message": "Restaurar publicação original" },
   "errorPrefix":          { "message": "Erro: " },
 
   "uiLangLabel":          { "message": "Idioma da interface" },

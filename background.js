@@ -3,6 +3,8 @@
 
 const DEFAULTS = {
   translationEnabled: true,
+  pageTranslationEnabled: false,
+  pageTranslationTargetLang: 'ru',
   aiChatEnabled: false,
   provider: 'google',
   targetLang: 'ru',
@@ -60,6 +62,9 @@ const LANG_NAMES = {
   ar: 'Arabic', pl: 'Polish'
 };
 
+const PAGE_TRANSLATION_CACHE_LIMIT = 1200;
+const pageTranslationCache = new Map();
+
 async function getSettings() {
   const stored = await chrome.storage.sync.get(DEFAULTS);
   const settings = { ...DEFAULTS, ...stored };
@@ -78,6 +83,118 @@ async function translateGoogle(text, targetLang, sourceLang = 'auto') {
   const translated = (data[0] || []).map(seg => seg[0]).join('');
   const detected = data[2] || sourceLang;
   return { translated, detected };
+}
+
+function rememberPageTranslation(key, value) {
+  if (pageTranslationCache.has(key)) pageTranslationCache.delete(key);
+  pageTranslationCache.set(key, value);
+  while (pageTranslationCache.size > PAGE_TRANSLATION_CACHE_LIMIT) {
+    pageTranslationCache.delete(pageTranslationCache.keys().next().value);
+  }
+}
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const output = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      output[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return output;
+}
+
+async function translateGooglePageGroup(group, targetLang) {
+  if (group.length === 1) {
+    return [(await translateGoogle(group[0], targetLang, 'auto')).translated];
+  }
+
+  const markerPrefix = 'DTHSEG9F4A';
+  const marker = index => `[[${markerPrefix}_${index}]]`;
+  const joined = group.map((text, index) => `${marker(index)}${text}`).join('\n');
+  const combined = (await translateGoogle(joined, targetLang, 'auto')).translated;
+  const markerPattern = /\[\[\s*DTHSEG9F4A_(\d+)\s*\]\]/gi;
+  const parsed = new Array(group.length);
+  const matches = Array.from(combined.matchAll(markerPattern));
+
+  if (matches.length === group.length) {
+    for (let index = 0; index < matches.length; index++) {
+      const match = matches[index];
+      const segmentIndex = Number(match[1]);
+      const start = match.index + match[0].length;
+      const end = index + 1 < matches.length ? matches[index + 1].index : combined.length;
+      if (segmentIndex >= 0 && segmentIndex < parsed.length) {
+        parsed[segmentIndex] = combined.slice(start, end).trim();
+      }
+    }
+  }
+
+  if (parsed.every(value => typeof value === 'string' && value.length > 0)) return parsed;
+
+  // Some translation engines can alter separators. Fall back to independent
+  // requests so page structure is never corrupted by a failed batch split.
+  return mapWithConcurrency(group, 3, async text => (
+    await translateGoogle(text, targetLang, 'auto')
+  ).translated);
+}
+
+async function translatePageSegments({ segments, targetLang }) {
+  const settings = await getSettings();
+  if (settings.translationEnabled === false) throw new Error('Перевод выключен в настройках.');
+
+  const tl = String(targetLang || settings.pageTranslationTargetLang || settings.targetLang || 'ru').toLowerCase();
+  if (!LANG_NAMES[tl]) throw new Error('Unsupported page translation language.');
+
+  const source = Array.isArray(segments) ? segments.slice(0, 600) : [];
+  let totalChars = 0;
+  const safeSegments = source.map(value => {
+    const text = String(value || '').trim().slice(0, 4000);
+    totalChars += text.length;
+    if (totalChars > 120000) throw new Error('Page is too large to translate in one pass.');
+    return text;
+  });
+
+  const results = new Array(safeSegments.length);
+  const pending = [];
+  safeSegments.forEach((text, index) => {
+    if (!text) {
+      results[index] = '';
+      return;
+    }
+    const cacheKey = `${tl}\u0000${text}`;
+    if (pageTranslationCache.has(cacheKey)) {
+      results[index] = pageTranslationCache.get(cacheKey);
+    } else {
+      pending.push({ index, text, cacheKey });
+    }
+  });
+
+  const groups = [];
+  let group = [];
+  let groupChars = 0;
+  for (const item of pending) {
+    if (group.length >= 10 || (group.length && groupChars + item.text.length > 3200)) {
+      groups.push(group);
+      group = [];
+      groupChars = 0;
+    }
+    group.push(item);
+    groupChars += item.text.length;
+  }
+  if (group.length) groups.push(group);
+
+  await mapWithConcurrency(groups, 3, async items => {
+    const translated = await translateGooglePageGroup(items.map(item => item.text), tl);
+    items.forEach((item, index) => {
+      const value = translated[index] || item.text;
+      results[item.index] = value;
+      rememberPageTranslation(item.cacheKey, value);
+    });
+  });
+
+  return { translations: results, targetLang: tl };
 }
 
 async function translateMyMemory(text, targetLang, sourceLang) {
@@ -141,7 +258,8 @@ async function translateGemini(text, targetLang, sourceLang, apiKey, model) {
     'You are a translator.',
     direction,
     'Output ONLY the translation. No explanations, no notes, no quotes around the result.',
-    'Preserve emojis, @mentions, URLs, and code blocks unchanged.',
+    'Preserve emojis, @mentions, URLs, code blocks, paragraph breaks, line breaks, indentation, list structure, and spacing unchanged.',
+    'Keep all tokens enclosed in double square brackets, such as [[DTH_LINE_0_9F4A]], exactly unchanged.',
     `If the text is already in ${targetName}, output it unchanged.`
   ].join(' ');
 
@@ -201,7 +319,8 @@ async function translateOpenRouter(text, targetLang, sourceLang, apiKey, model) 
     'You are a translator.',
     direction,
     'Output ONLY the translation. No explanations, no notes, no quotes around the result.',
-    'Preserve emojis, @mentions, URLs, and code blocks unchanged.',
+    'Preserve emojis, @mentions, URLs, code blocks, paragraph breaks, line breaks, indentation, list structure, and spacing unchanged.',
+    'Keep all tokens enclosed in double square brackets, such as [[DTH_LINE_0_9F4A]], exactly unchanged.',
     `If the text is already in ${targetName}, output it unchanged.`
   ].join(' ');
 
@@ -477,7 +596,8 @@ async function translateChatGPT(text, targetLang, sourceLang, model, sender) {
   const prompt = [
     direction,
     'Output ONLY the translation. No explanations, no notes, no quotes around the result.',
-    'Preserve emojis, @mentions, URLs, and code blocks unchanged.',
+    'Preserve emojis, @mentions, URLs, code blocks, paragraph breaks, line breaks, indentation, list structure, and spacing unchanged.',
+    'Keep all tokens enclosed in double square brackets, such as [[DTH_LINE_0_9F4A]], exactly unchanged.',
     `If the text is already in ${targetName}, output it unchanged.`,
     '',
     text
@@ -878,7 +998,7 @@ chrome.notifications.onClicked.addListener(notificationId => {
   chrome.notifications.clear(notificationId);
 });
 
-// Контекстное меню: «Передать ИИ» на выделенном тексте.
+// Context menu actions for selected text.
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -886,16 +1006,33 @@ chrome.runtime.onInstalled.addListener(() => {
       title: chrome.i18n.getMessage('aiChatMenuSend') || 'Передать ИИ ✦',
       contexts: ['selection']
     });
+    chrome.contextMenus.create({
+      id: 'dth-translate-selection',
+      title: chrome.i18n.getMessage('translateSelectionMenu') || 'Translate selected text 🌐',
+      contexts: ['selection']
+    });
   });
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== 'dth-ai-quote' || !tab || !tab.id) return;
-  chrome.tabs.sendMessage(
-    tab.id,
-    { type: 'ai-quote', text: info.selectionText || '' },
-    () => void chrome.runtime.lastError // на Discord/X панели нет — молча игнорируем
-  );
+  if (!tab || !tab.id) return;
+  const options = Number.isInteger(info.frameId) ? { frameId: info.frameId } : {};
+  if (info.menuItemId === 'dth-ai-quote') {
+    chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'ai-quote', text: info.selectionText || '' },
+      () => void chrome.runtime.lastError
+    );
+    return;
+  }
+  if (info.menuItemId === 'dth-translate-selection') {
+    chrome.tabs.sendMessage(
+      tab.id,
+      { type: 'dth-translate-selection', text: info.selectionText || '' },
+      options,
+      () => void chrome.runtime.lastError
+    );
+  }
 });
 
 // Память контекста для ChatGPT: при UI-автоматизации сообщения идут в один
@@ -1043,6 +1180,31 @@ async function translate({ text, targetLang, sourceLang = 'auto' }, sender) {
   }
 }
 
+async function translateSelectionSegments({ segments, targetLang, sourceLang = 'auto' }, sender) {
+  const source = Array.isArray(segments) ? segments.slice(0, 100) : [];
+  let totalChars = 0;
+  const safeSegments = source.map(value => {
+    const text = String(value || '').slice(0, 4000);
+    totalChars += text.length;
+    if (totalChars > 12000) throw new Error('Selected text is too large to translate.');
+    return text;
+  });
+  if (!safeSegments.length) return { translations: [], detected: sourceLang };
+
+  const settings = await getSettings();
+  const concurrency = settings.provider === 'chatgpt' ? 1 : Math.min(3, safeSegments.length);
+  const results = await mapWithConcurrency(safeSegments, concurrency, text => (
+    translate({ text, targetLang, sourceLang }, sender)
+  ));
+  const detected = results.find(result => result?.detected && result.detected !== 'auto')?.detected
+    || results[0]?.detected
+    || sourceLang;
+  return {
+    translations: results.map((result, index) => result?.translated || safeSegments[index]),
+    detected
+  };
+}
+
 // --- Доверенные клики через chrome.debugger (Input.dispatchMouseEvent) ---
 // Синтетические события имеют isTrusted=false, и часть сайтов их игнорирует
 // (календари, датапикеры). Debugger шлёт события уровня браузера — как
@@ -1094,6 +1256,28 @@ try {
 } catch { }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === 'translatePageSegments') {
+    translatePageSegments(msg)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(err => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
+  }
+
+  if (msg && msg.type === 'pageTranslationBadge') {
+    const tabId = sender && sender.tab && sender.tab.id;
+    if (!tabId) {
+      sendResponse({ ok: false });
+      return;
+    }
+    const text = msg.active ? String(msg.targetLang || '').toUpperCase().slice(0, 3) : '';
+    Promise.all([
+      chrome.action.setBadgeBackgroundColor({ tabId, color: '#6C5CE7' }),
+      chrome.action.setBadgeText({ tabId, text })
+    ]).then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
+  }
+
   if (msg && msg.type === 'openXAgentReport') {
     chrome.tabs.create({
       url: chrome.runtime.getURL('report/x-agent-report.html'),
@@ -1122,6 +1306,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(err => sendResponse({ ok: false, error: err.message || String(err) }));
     return true; // async
+  }
+  if (msg && msg.type === 'translateSelectionSegments') {
+    translateSelectionSegments(msg, sender)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(err => sendResponse({ ok: false, error: err.message || String(err) }));
+    return true;
   }
   if (msg && msg.type === 'getSettings') {
     getSettings().then(s => sendResponse(s));

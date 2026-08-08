@@ -12,6 +12,8 @@ It started as a Discord translation helper, but now also supports X/Twitter and 
 - Movable translate button: drag it by the small handle, double-click the handle to reset its position.
 - Smart dropdown direction: opens upward when the input is near the bottom of the screen.
 - Translation can be enabled or disabled from the popup.
+- Optional automatic full-page translation with a movable status bar, language switcher, Undo, automatic collapse, and an extension-icon language badge.
+- Translate selected text from the right-click menu in a movable overlay, with preserved formatting, text-to-speech, and side-by-side layouts.
 - AI chat on pages, marked as beta and disabled by default.
 - X Reply Agent Beta can analyze X posts, write reply drafts, and optionally run through a feed with a reply limit.
 - Popup settings save automatically, and the X Reply Agent section can be collapsed.
@@ -59,6 +61,17 @@ If you edit the source code, reload the extension in `chrome://extensions/` and 
 3. Click the main button to replace your draft with the translated text.
 4. Use the arrow button to choose another target language quickly.
 5. Drag the small handle if the button covers something important.
+
+### Translate A Whole Page Or Selected Text
+
+1. Open the extension popup and enable `Translate pages automatically`.
+2. Choose the page language. Full-page mode uses Google translation to avoid AI token costs.
+3. Reload the website, or enable the option while the website is open. A toolbar appears in the top-right corner while the page is translated.
+4. Use the toolbar to change the language, undo the translation, or minimize the controls. You can drag both the toolbar and its compact icon; after a successful translation it collapses automatically in five seconds. The extension icon also shows the active language code.
+5. To translate only part of a page, select text, right-click it, and choose `Translate selected text`.
+6. Drag the result card anywhere on the screen, use `Place by original`, enable `Show original`, or listen to the original and translated text. Line breaks, indentation, spacing, and emojis are preserved where supported by the selected provider.
+
+Full-page mode stores original text only in the current page memory so Undo can restore it. Readable text blocks are sent to Google for translation, but page HTML is not uploaded. Selection translation uses the provider selected in the popup.
 
 ### AI Chat Beta
 
@@ -146,6 +159,8 @@ AI Helper - расширение для Chrome, которое помогает 
 - Кнопку перевода можно двигать: тяни за маленькую ручку, двойной клик по ручке сбрасывает позицию.
 - Выпадающее меню само открывается вверх, если поле ввода находится снизу экрана.
 - Перевод можно включить или выключить в popup-окне расширения.
+- Можно включить автоматический перевод всей страницы с верхней панелью, сменой языка, отменой и badge языка на иконке расширения.
+- Выделенный текст можно перевести через контекстное меню в отдельной перемещаемой карточке или рядом с оригиналом.
 - AI-чат на страницах помечен как beta и по умолчанию выключен.
 - X Reply Agent Beta может анализировать посты в X, писать черновики ответов и опционально проходить ленту с заданным лимитом.
 - Настройки popup сохраняются автоматически, а секцию X Reply Agent можно свернуть.
@@ -193,6 +208,17 @@ LibreTranslate убран из popup и permissions, чтобы первая Chr
 3. Нажми основную кнопку, чтобы заменить черновик на перевод.
 4. Нажми стрелочку, чтобы быстро выбрать другой язык.
 5. Если кнопка мешает, перетащи ее за маленькую ручку.
+
+### Перевод всей страницы или выделенного текста
+
+1. Открой popup расширения и включи `Translate pages automatically`.
+2. Выбери язык страницы. Полный перевод использует Google, чтобы не расходовать AI-токены.
+3. Обнови сайт или включи функцию на уже открытой вкладке. Во время перевода справа сверху появится панель управления.
+4. На панели можно сменить язык, отменить перевод или свернуть управление. Панель и её компактный значок можно двигать; через пять секунд после успешного перевода панель сворачивается автоматически. На иконке расширения отображается код активного языка.
+5. Чтобы перевести только часть страницы, выдели текст, нажми правой кнопкой и выбери `Translate selected text`.
+6. Карточку результата можно двигать, вернуть рядом с оригиналом, включить режим `Show original` или озвучить исходный текст и перевод. Переносы строк, отступы, пробелы и эмодзи сохраняются, если выбранный провайдер их поддерживает.
+
+Оригинальный текст для отмены хранится только в памяти текущей страницы. Читаемые текстовые блоки отправляются в Google для перевода, но HTML страницы не загружается. Перевод выделения использует провайдера, выбранного в popup.
 
 ### AI-чат Beta
 

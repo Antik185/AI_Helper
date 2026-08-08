@@ -83,6 +83,8 @@
   "aiChatActClicked": { "message": "Clicked" },
   "aiChatActTyped": { "message": "Filled" },
 
+  "translateSelectionMenu": { "message": "Translate selected text" },
+
   "lang_ru": { "message": "Russian" },
   "lang_en": { "message": "English" },
   "lang_uk": { "message": "Ukrainian" },

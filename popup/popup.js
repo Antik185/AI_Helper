@@ -1,5 +1,7 @@
 const FIELDS = [
   'translationEnabled',
+  'pageTranslationEnabled',
+  'pageTranslationTargetLang',
   'aiChatEnabled',
   'provider',
   'targetLang',
@@ -28,6 +30,8 @@ const FIELDS = [
 
 const DEFAULTS = {
   translationEnabled: true,
+  pageTranslationEnabled: false,
+  pageTranslationTargetLang: 'ru',
   aiChatEnabled: false,
   provider: 'google',
   targetLang: 'ru',
@@ -258,6 +262,7 @@ function setControlDisabled(id, disabled) {
 
 function showFeatureStates() {
   const translationOff = !document.getElementById('translationEnabled').checked;
+  const pageTranslationOff = !document.getElementById('pageTranslationEnabled').checked;
   const aiChatOff = !document.getElementById('aiChatEnabled').checked;
   const xAgentOff = !document.getElementById('xAgentEnabled').checked;
   const provider = document.getElementById('provider').value;
@@ -266,6 +271,8 @@ function showFeatureStates() {
 
   ['provider', 'targetLang', 'outboundSourceLang', 'outboundTargetLang', 'swapBtn']
     .forEach(id => setControlDisabled(id, translationOff));
+  setControlDisabled('pageTranslationEnabled', translationOff);
+  setControlDisabled('pageTranslationTargetLang', translationOff || pageTranslationOff);
   setControlDisabled('geminiKey', translationOff || provider !== 'gemini');
   setControlDisabled('geminiModel', translationOff || provider !== 'gemini');
   setControlDisabled('deeplKey', translationOff || provider !== 'deepl');
@@ -370,6 +377,7 @@ async function applyLocale(uiLang) {
   await ensureOverrideLocale(uiLang);
   applyI18n();
   populateLangSelect(document.getElementById('targetLang'), false);
+  populateLangSelect(document.getElementById('pageTranslationTargetLang'), false);
   populateLangSelect(document.getElementById('outboundSourceLang'), true);
   populateLangSelect(document.getElementById('outboundTargetLang'), false);
   populateUiLangSelect(document.getElementById('uiLang'));
@@ -495,6 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showProviderFields();
     showFeatureStates();
   });
+  document.getElementById('pageTranslationEnabled').addEventListener('change', showFeatureStates);
   document.getElementById('aiChatEnabled').addEventListener('change', () => {
     showProviderFields();
     showAiChatTools();

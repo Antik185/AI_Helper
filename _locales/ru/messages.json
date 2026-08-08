@@ -1,4 +1,5 @@
 {
+  "translateSelectionMenu": { "message": "Перевести выделенный текст" },
   "extName":            { "message": "Discord Translate Helper" },
   "extDescription":     { "message": "Переводит сообщения в Discord и помогает писать на нужном языке." },
 

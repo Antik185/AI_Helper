@@ -40,6 +40,31 @@
       </label>
     </div>
 
+    <div class="card page-translation-card">
+      <div class="card-head">
+        <span class="chip" aria-hidden="true">🌐</span>
+        <span>Page translation</span>
+      </div>
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Translate pages automatically</div>
+          <div class="feature-sub">Replace page text and show a toolbar with Undo and language controls.</div>
+        </div>
+        <label class="switch">
+          <input id="pageTranslationEnabled" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div class="field">
+        <span class="field-label">Page language</span>
+        <div class="select">
+          <select id="pageTranslationTargetLang"></select>
+        </div>
+        <small class="hint-inline">When enabled, readable page text is sent to Google for fast translation without AI token costs.</small>
+      </div>
+      <small class="hint-inline">Select text on any page, right-click it, and choose “Translate selected text”. The result opens in a movable card.</small>
+    </div>
+
     <!-- Провайдер -->
     <div class="field">
       <span class="field-label">

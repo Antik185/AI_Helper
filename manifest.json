@@ -40,6 +40,12 @@
       "run_at": "document_idle"
     },
     {
+      "matches": ["<all_urls>"],
+      "js": ["page-translate.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
       "matches": [
         "https://discord.com/*",
         "https://canary.discord.com/*",

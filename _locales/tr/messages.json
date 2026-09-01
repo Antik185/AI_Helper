@@ -53,6 +53,8 @@
 
   "translationFeatureLabel": { "message": "Çeviri düğmeleri" },
   "translationFeatureHint": { "message": "Metin alanları ve Discord mesajları yanında çeviri denetimlerini göster." },
+  "geminiRegionUnsupported": { "message": "Gemini API mevcut bölgenizde kullanılamıyor. Aşağıdaki modeller yerleşik yedek katalogdan gösteriliyor. Başka bir Gemini modeli seçmek bölgesel kısıtlamayı aşmaz. OpenRouter veya başka bir sağlayıcı kullanın." },
+
   "lang_ru": { "message": "Rusça" },
   "lang_en": { "message": "İngilizce" },
   "lang_uk": { "message": "Ukraynaca" },

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relationship CRM · AI Helper</title>
+  <link rel="stylesheet" href="relationship.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="brand">
+        <img src="../icons/icon-128.png" alt="">
+        <div>
+          <div class="eyebrow">AI Helper · Stored locally</div>
+          <h1>Relationship CRM</h1>
+          <p>Track authors, prepare contextual replies, and see who followed you back.</p>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <button id="refreshResults" type="button">Refresh data</button>
+        <button id="startSession" class="primary" type="button">Start relationship session</button>
+        <button id="resumeSession" type="button" hidden>Resume current session</button>
+      </div>
+    </header>
+
+    <section id="sessionBanner" class="session-banner" hidden>
+      <span class="status-dot"></span>
+      <div>
+        <strong id="sessionTitle">Session active</strong>
+        <p id="sessionText"></p>
+      </div>
+      <button id="endSession" class="danger subtle" type="button">End session</button>
+    </section>
+
+    <section id="stats" class="stats"></section>
+
+    <details class="panel api-panel">
+      <summary>
+        <span>X API connection <span id="apiBadge" class="badge muted">Optional</span></span>
+        <small>Updates reply links, total engagement, author responses, and follow-backs</small>
+      </summary>
+      <form id="apiForm" class="api-form">
+        <label>
+          <span>Your X handle</span>
+          <input id="ownHandle" type="text" placeholder="@your_handle" autocomplete="off">
+        </label>
+        <label>
+          <span>Read-only Bearer Token</span>
+          <input id="bearerToken" type="password" placeholder="Paste token" autocomplete="new-password">
+        </label>
+        <label class="api-checkbox">
+          <input id="checkFollowBack" type="checkbox">
+          <span>Check follow-backs too (optional; reads at most the first 1,000 followers once per UTC day)</span>
+        </label>
+        <div class="api-actions">
+          <button class="primary" type="submit">Save API settings</button>
+          <button id="clearApiToken" class="danger subtle" type="button">Remove saved token</button>
+        </div>
+        <p id="apiStatus" class="form-status" role="status"></p>
+        <p class="api-warning">The app-only token stays in Chrome local storage and is never exported. A normal refresh batch-reads at most 20 of your replies. Author-response search runs only after the public reply count increases. Follow-back scanning is optional and cached for the UTC day because X API charges per returned resource.</p>
+      </form>
+    </details>
+
+    <section class="panel add-panel">
+      <div>
+        <h2>Add an author</h2>
+        <p>Paste an X handle or profile URL. You can also add authors from the <strong>✦ AI</strong> menu under any post.</p>
+      </div>
+      <form id="addAuthorForm" class="add-form">
+        <input id="authorInput" type="text" placeholder="@handle or https://x.com/handle" autocomplete="off" required>
+        <input id="authorNotes" type="text" placeholder="Optional notes: niche, project, context">
+        <button class="primary" type="submit">Add author</button>
+      </form>
+      <p id="formStatus" class="form-status" role="status"></p>
+    </section>
+
+    <section class="toolbar panel">
+      <input id="search" type="search" placeholder="Search handles, names, or notes">
+      <select id="filter">
+        <option value="active">Active</option>
+        <option value="all">All authors</option>
+        <option value="followed_back">Followed back</option>
+        <option value="tracking">Tracking</option>
+        <option value="archived">Archived</option>
+      </select>
+      <div class="toolbar-spacer"></div>
+      <button id="exportData" type="button">Export JSON</button>
+      <button id="importData" type="button">Import JSON</button>
+      <input id="importFile" type="file" accept="application/json,.json" hidden>
+      <button id="resetData" class="danger subtle" type="button">Reset CRM</button>
+    </section>
+
+    <section id="emptyState" class="empty panel" hidden>
+      <strong>No tracked authors yet</strong>
+      <p>Add someone above or use the AI button under an X post.</p>
+    </section>
+    <section id="authorList" class="authors"></section>
+  </main>
+  <script src="relationship.js"></script>
+</body>
+</html>

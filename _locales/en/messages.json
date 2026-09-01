@@ -87,6 +87,8 @@
 
   "translateSelectionMenu": { "message": "Translate selected text" },
 
+  "geminiRegionUnsupported": { "message": "Gemini API is unavailable in your current region. The models below come from a built-in fallback catalog. Choosing another Gemini model will not bypass the regional restriction. Use OpenRouter or another provider." },
+
   "lang_ru": { "message": "Russian" },
   "lang_en": { "message": "English" },
   "lang_uk": { "message": "Ukrainian" },

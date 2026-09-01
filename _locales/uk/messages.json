@@ -53,6 +53,8 @@
 
   "translationFeatureLabel": { "message": "Кнопки перекладу" },
   "translationFeatureHint": { "message": "Показувати переклад біля полів введення та повідомлень Discord." },
+  "geminiRegionUnsupported": { "message": "API Gemini недоступний у вашому поточному регіоні. Моделі нижче показано з вбудованого резервного каталогу. Вибір іншої моделі Gemini не обійде регіональне обмеження. Використовуйте OpenRouter або іншого провайдера." },
+
   "lang_ru": { "message": "Російська" },
   "lang_en": { "message": "Англійська" },
   "lang_uk": { "message": "Українська" },

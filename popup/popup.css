@@ -251,6 +251,32 @@ body {
   border-color: var(--brand-500);
   box-shadow: 0 0 0 3px var(--brand-glow);
 }
+.gemini-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.gemini-model-refresh {
+  min-width: 68px;
+  padding: 0 11px;
+  font: 700 11px/1 inherit;
+  color: var(--brand-400);
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.gemini-model-refresh:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--brand-500);
+}
+.gemini-model-refresh:disabled {
+  opacity: .55;
+  cursor: wait;
+}
 .text-area {
   min-height: 92px;
   resize: vertical;
@@ -280,6 +306,13 @@ body {
   font-size: 10.5px;
   line-height: 1.4;
   margin-top: 2px;
+}
+.hint-inline.is-warning {
+  color: #f5b64f;
+  font-weight: 600;
+}
+body[data-theme="light"] .hint-inline.is-warning {
+  color: #7a3f00;
 }
 
 /* Группа полей провайдера — лёгкая визуальная связка */

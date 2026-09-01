@@ -341,10 +341,71 @@
   cursor: pointer;
 }
 
+.dth-x-relationship-track {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 7px;
+  padding: 6px 8px;
+  border: 1px solid rgba(108, 92, 231, .5);
+  border-radius: 8px;
+  background: rgba(108, 92, 231, .13);
+  color: #b5adff;
+  cursor: pointer;
+  font: 750 10px/1.2 inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dth-x-relationship-track:hover,
+.dth-x-relationship-track[data-tracked="true"] {
+  border-color: rgba(46, 204, 113, .58);
+  background: rgba(46, 204, 113, .14);
+  color: #78e5a5;
+}
+
+.dth-x-relationship-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 2147483647;
+  max-width: min(360px, calc(100vw - 40px));
+  padding: 11px 14px;
+  border: 1px solid rgba(46, 204, 113, .52);
+  border-radius: 12px;
+  background: rgba(12, 29, 20, .96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .38);
+  color: #7ae5a6;
+  font: 750 12px/1.35 inherit;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.dth-x-relationship-toast.is-visible { opacity: 1; transform: translateY(0); }
+.dth-x-relationship-toast.is-error { border-color: rgba(255, 92, 114, .55); background: rgba(49, 14, 24, .97); color: #ff91a2; }
+
 .dth-x-agent-active {
   outline: 2px solid rgba(46, 204, 113, 0.9);
   outline-offset: -2px;
   box-shadow: inset 0 0 0 1px rgba(46, 204, 113, 0.35);
+}
+
+.dth-x-relationship-target {
+  outline: 3px solid rgba(108, 92, 231, .92) !important;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 1px rgba(180, 169, 255, .34), 0 0 24px rgba(108, 92, 231, .16) !important;
+}
+
+.dth-x-relationship-native-action {
+  border-radius: 999px !important;
+  box-shadow: 0 0 0 3px rgba(46, 204, 113, .24), 0 0 16px rgba(46, 204, 113, .22) !important;
+  animation: dth-relationship-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dth-relationship-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(46, 204, 113, .18), 0 0 12px rgba(46, 204, 113, .14); }
+  50% { box-shadow: 0 0 0 5px rgba(46, 204, 113, .27), 0 0 20px rgba(46, 204, 113, .26); }
 }
 
 .dth-x-agent-panel {
@@ -760,6 +821,113 @@
   opacity: .42;
 }
 
+.dth-x-relationship-section {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+  padding: 13px;
+  border: 1px solid rgba(108, 92, 231, .34);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(108, 92, 231, .1), rgba(29, 155, 240, .045));
+}
+
+.dth-x-relationship-section.is-active {
+  border-color: rgba(46, 204, 113, .5);
+  background: linear-gradient(145deg, rgba(46, 204, 113, .11), rgba(108, 92, 231, .06));
+}
+
+.dth-x-relationship-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dth-x-relationship-head strong {
+  color: #f4f5f7;
+  font-size: 12px;
+}
+
+.dth-x-relationship-count {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(108, 92, 231, .2);
+  color: #b8b0ff;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dth-x-relationship-progress {
+  color: #e9ebef;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dth-x-relationship-hint {
+  color: #8c939d;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.dth-x-relationship-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.dth-x-relationship-actions button,
+.dth-x-relationship-dashboard {
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 1px solid #3b424d;
+  border-radius: 9px;
+  background: #20252d;
+  color: #e7eaee;
+  cursor: pointer;
+  font: 800 9px/1.2 inherit;
+}
+
+.dth-x-relationship-actions button[hidden] {
+  display: none !important;
+}
+
+.dth-x-relationship-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.dth-x-relationship-start,
+.dth-x-relationship-prepare {
+  grid-column: 1 / -1;
+  border-color: rgba(108, 92, 231, .72) !important;
+  background: #6c5ce7 !important;
+  color: #fff !important;
+}
+
+.dth-x-relationship-complete {
+  border-color: rgba(46, 204, 113, .68) !important;
+  background: #2ecc71 !important;
+  color: #06170d !important;
+}
+
+.dth-x-relationship-end {
+  border-color: rgba(255, 92, 114, .5) !important;
+  color: #ff8fa0 !important;
+}
+
+.dth-x-relationship-dashboard {
+  width: 100%;
+  background: transparent;
+  color: #aaa2f8;
+}
+
+.dth-x-relationship-actions button:not(:disabled):hover,
+.dth-x-relationship-dashboard:hover {
+  filter: brightness(1.13);
+  transform: translateY(-1px);
+}
+
 .dth-x-agent-panel.is-running {
   filter: drop-shadow(0 0 8px rgba(46, 204, 113, .12));
 }
@@ -1011,5 +1179,29 @@
     border-color: #c9234e !important;
     background: #b91843 !important;
     color: #fff !important;
+  }
+  .dth-x-relationship-section {
+    border-color: rgba(108, 92, 231, .28);
+    background: rgba(108, 92, 231, .055);
+  }
+  .dth-x-relationship-section.is-active {
+    border-color: rgba(32, 169, 90, .36);
+    background: rgba(32, 169, 90, .06);
+  }
+  .dth-x-relationship-head strong,
+  .dth-x-relationship-progress {
+    color: #17212b;
+  }
+  .dth-x-relationship-hint { color: #536471; }
+  .dth-x-relationship-actions button,
+  .dth-x-relationship-dashboard {
+    border-color: #cfd6dd;
+    background: #f4f7f9;
+    color: #263642;
+  }
+  .dth-x-relationship-track {
+    border-color: rgba(108, 92, 231, .32);
+    background: rgba(108, 92, 231, .08);
+    color: #5647c9;
   }
 }

@@ -86,6 +86,8 @@
   "aiChatActClicked": { "message": "Нажато" },
   "aiChatActTyped": { "message": "Заполнено поле" },
 
+  "geminiRegionUnsupported": { "message": "API Gemini недоступен в вашем текущем регионе. Модели ниже показаны из встроенного резервного каталога. Выбор другой модели Gemini не обойдёт региональное ограничение. Используйте OpenRouter или другого провайдера." },
+
   "lang_ru": { "message": "Русский" },
   "lang_en": { "message": "English" },
   "lang_uk": { "message": "Українська" },

@@ -53,6 +53,8 @@
 
   "translationFeatureLabel": { "message": "翻译按钮" },
   "translationFeatureHint": { "message": "在文本输入框和 Discord 消息旁显示翻译控件。" },
+  "geminiRegionUnsupported": { "message": "Gemini API 在您当前所在的地区不可用。以下模型来自内置备用目录。选择其他 Gemini 模型也无法绕过地区限制。请使用 OpenRouter 或其他提供商。" },
+
   "lang_ru": { "message": "俄语" },
   "lang_en": { "message": "英语" },
   "lang_uk": { "message": "乌克兰语" },

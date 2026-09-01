@@ -39,7 +39,7 @@ const DEFAULTS = {
   outboundTargetLang: 'en',
   deeplKey: '',
   geminiKey: '',
-  geminiModel: 'gemini-2.0-flash',
+  geminiModel: 'auto',
   openrouterKey: '',
   openrouterModel: 'google/gemini-2.5-flash',
   chatgptModel: 'auto',
@@ -362,6 +362,13 @@ async function openXAgentReport() {
   });
 }
 
+async function openRelationshipDashboard() {
+  await chrome.tabs.create({
+    url: chrome.runtime.getURL('relationship/relationship.html'),
+    active: true
+  });
+}
+
 // ----- Тема -----
 
 function applyTheme(theme) {
@@ -414,6 +421,54 @@ async function broadcastLocaleChange(uiLang) {
 
 // ----- Загрузка / сохранение -----
 
+async function refreshGeminiModelOptions({ force = false, selectedValue } = {}) {
+  const select = document.getElementById('geminiModel');
+  const keyInput = document.getElementById('geminiKey');
+  const hint = document.getElementById('geminiModelHint');
+  const button = document.getElementById('refreshGeminiModels');
+  if (!select || !keyInput || !hint || !button) return;
+
+  const requested = selectedValue || select.value || 'auto';
+  select.replaceChildren(new Option('Auto (recommended)', 'auto'));
+  hint.classList.remove('is-warning');
+  if (!keyInput.value.trim()) {
+    select.value = 'auto';
+    hint.textContent = 'Enter your Gemini API key to load compatible models.';
+    if (requested !== 'auto') await chrome.storage.sync.set({ geminiModel: 'auto' });
+    return;
+  }
+
+  button.disabled = true;
+  hint.textContent = 'Loading current Gemini models…';
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'getGeminiModels', force });
+    if (!response?.ok) throw new Error(response?.error || 'Could not load Gemini models.');
+    const models = Array.isArray(response.models) ? response.models : [];
+    models.forEach(model => {
+      const id = String(model.id || '');
+      if (!id) return;
+      const name = String(model.displayName || id);
+      select.append(new Option(name === id ? id : `${name} — ${id}`, id));
+    });
+    const available = models.some(model => model.id === requested);
+    const nextValue = requested === 'auto' || available ? requested : 'auto';
+    select.value = nextValue;
+    if (nextValue !== requested) await chrome.storage.sync.set({ geminiModel: nextValue });
+    hint.textContent = response.regionUnsupported
+      ? t('geminiRegionUnsupported')
+      : (response.warning || (response.autoModel
+        ? `Auto currently uses ${response.autoModel}. ${models.length} compatible models found.`
+        : `${models.length} compatible models found.`));
+    hint.classList.toggle('is-warning', response.regionUnsupported === true);
+  } catch (error) {
+    select.value = 'auto';
+    hint.textContent = error.message || String(error);
+    hint.classList.add('is-warning');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function load() {
   const [stored, local] = await Promise.all([
     chrome.storage.sync.get(DEFAULTS),
@@ -421,6 +476,11 @@ async function load() {
   ]);
   applyTheme(stored.theme);
   await applyLocale(stored.uiLang);
+  const savedGeminiModel = String(stored.geminiModel || 'auto');
+  const geminiSelect = document.getElementById('geminiModel');
+  if (savedGeminiModel !== 'auto') {
+    geminiSelect.append(new Option(savedGeminiModel, savedGeminiModel));
+  }
   for (const key of FIELDS) {
     const el = document.getElementById(key);
     if (!el || stored[key] === undefined) continue;
@@ -432,6 +492,9 @@ async function load() {
   showFeatureStates();
   updateMemoryEstimate();
   applyXAgentCollapsed(local.xAgentCardCollapsed === true);
+  if (stored.provider === 'gemini') {
+    await refreshGeminiModelOptions({ selectedValue: savedGeminiModel });
+  }
   popupLoaded = true;
   setAutosaveStatus('saved', 'Changes are saved automatically');
 }
@@ -494,9 +557,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Провайдер
-  document.getElementById('provider').addEventListener('change', () => {
+  document.getElementById('provider').addEventListener('change', async (event) => {
     showProviderFields();
     showFeatureStates();
+    if (event.target.value === 'gemini') {
+      await save();
+      await refreshGeminiModelOptions({ selectedValue: document.getElementById('geminiModel').value });
+    }
   });
 
   document.getElementById('translationEnabled').addEventListener('change', () => {
@@ -527,8 +594,24 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('setupChatgptWindow').addEventListener('click', setupChatGPTWindow);
   document.getElementById('startXAgent').addEventListener('click', startXAgentFromPopup);
   document.getElementById('openXAgentReport').addEventListener('click', openXAgentReport);
+  document.getElementById('openRelationshipDashboard').addEventListener('click', openRelationshipDashboard);
   document.getElementById('resetXAgentMemory').addEventListener('click', resetXAgentMemory);
   document.getElementById('xAgentMemoryLimit').addEventListener('input', updateMemoryEstimate);
+  document.getElementById('refreshGeminiModels').addEventListener('click', async () => {
+    await save();
+    await refreshGeminiModelOptions({
+      force: true,
+      selectedValue: document.getElementById('geminiModel').value
+    });
+  });
+  document.getElementById('geminiKey').addEventListener('change', async () => {
+    if (document.getElementById('provider').value !== 'gemini') return;
+    await save();
+    await refreshGeminiModelOptions({
+      force: true,
+      selectedValue: document.getElementById('geminiModel').value
+    });
+  });
   document.getElementById('xAgentCollapse').addEventListener('click', async () => {
     const card = document.getElementById('xAgentCard');
     const collapsed = !card.classList.contains('is-collapsed');

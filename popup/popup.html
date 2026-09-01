@@ -109,7 +109,13 @@
       </div>
       <div class="field">
         <span class="field-label" data-i18n="geminiModelLabel"></span>
-        <input id="geminiModel" class="text-field" type="text" placeholder="gemini-2.0-flash">
+        <div class="gemini-model-row">
+          <select id="geminiModel" class="text-field">
+            <option value="auto">Auto (recommended)</option>
+          </select>
+          <button id="refreshGeminiModels" class="gemini-model-refresh" type="button">Refresh</button>
+        </div>
+        <small id="geminiModelHint" class="hint-inline">Load current Gemini models with your API key.</small>
       </div>
     </div>
 
@@ -273,6 +279,7 @@
 
       <button id="startXAgent" class="pp-secondary" type="button">Start X Agent</button>
       <button id="openXAgentReport" class="pp-secondary" type="button">Open last report</button>
+      <button id="openRelationshipDashboard" class="pp-secondary" type="button">Open Relationship CRM</button>
       <button id="resetXAgentMemory" class="pp-secondary pp-danger" type="button">Reset agent memory</button>
 
       <div class="field">

@@ -53,6 +53,8 @@
 
   "translationFeatureLabel": { "message": "أزرار الترجمة" },
   "translationFeatureHint": { "message": "إظهار أدوات الترجمة بجانب حقول النص ورسائل Discord." },
+  "geminiRegionUnsupported": { "message": "واجهة Gemini API غير متاحة في منطقتك الحالية. النماذج أدناه معروضة من الكتالوج الاحتياطي المدمج. اختيار نموذج Gemini آخر لن يتجاوز القيود الإقليمية. استخدم OpenRouter أو مزودًا آخر." },
+
   "lang_ru": { "message": "الروسية" },
   "lang_en": { "message": "الإنجليزية" },
   "lang_uk": { "message": "الأوكرانية" },

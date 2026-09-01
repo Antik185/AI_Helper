@@ -53,6 +53,8 @@
 
   "translationFeatureLabel": { "message": "翻訳ボタン" },
   "translationFeatureHint": { "message": "入力欄とDiscordメッセージの近くに翻訳操作を表示します。" },
+  "geminiRegionUnsupported": { "message": "Gemini API は現在の地域では利用できません。以下のモデルは内蔵のフォールバックカタログから表示されています。別の Gemini モデルを選択しても地域制限は回避できません。OpenRouter または別のプロバイダーを使用してください。" },
+
   "lang_ru": { "message": "ロシア語" },
   "lang_en": { "message": "英語" },
   "lang_uk": { "message": "ウクライナ語" },

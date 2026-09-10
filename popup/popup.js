@@ -13,6 +13,7 @@ const FIELDS = [
   'openrouterKey',
   'openrouterModel',
   'chatgptModel',
+  'chatgptConversationUrl',
   'aiChatProvider',
   'xAgentEnabled',
   'xAgentProvider',
@@ -25,6 +26,9 @@ const FIELDS = [
   'xAgentDelayMinSeconds',
   'xAgentDelayMaxSeconds',
   'xAgentPrompt',
+  'xRelationshipPrompt',
+  'xRelationshipAutoLike',
+  'xRelationshipReplyToFollowers',
   'uiLang'
 ];
 
@@ -43,6 +47,7 @@ const DEFAULTS = {
   openrouterKey: '',
   openrouterModel: 'google/gemini-2.5-flash',
   chatgptModel: 'auto',
+  chatgptConversationUrl: '',
   aiChatProvider: 'openrouter',
   xAgentEnabled: true,
   xAgentProvider: 'openrouter',
@@ -55,6 +60,9 @@ const DEFAULTS = {
   xAgentDelayMinSeconds: 30,
   xAgentDelayMaxSeconds: 90,
   xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
+  xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
+  xRelationshipAutoLike: false,
+  xRelationshipReplyToFollowers: false,
   uiLang: 'auto',
   theme: 'dark'
 };
@@ -226,14 +234,16 @@ function populateUiLangSelect(selectEl) {
 // ----- Видимость полей провайдера + бейдж FREE -----
 
 function showProviderFields() {
+  const translationEnabled = document.getElementById('translationEnabled').checked;
   const provider = document.getElementById('provider').value;
   const aiProvider = document.getElementById('aiChatProvider').value;
   const xAgentProvider = document.getElementById('xAgentProvider').value;
   const aiChatEnabled = document.getElementById('aiChatEnabled').checked;
   const xAgentEnabled = document.getElementById('xAgentEnabled').checked;
-  const needsChatGPT = provider === 'chatgpt' || (aiChatEnabled && aiProvider === 'chatgpt')
+  const needsChatGPT = (translationEnabled && provider === 'chatgpt')
+    || (aiChatEnabled && aiProvider === 'chatgpt')
     || (xAgentEnabled && xAgentProvider === 'chatgpt');
-  const needsOpenRouter = provider === 'openrouter' || provider === 'openrouter_free'
+  const needsOpenRouter = (translationEnabled && (provider === 'openrouter' || provider === 'openrouter_free'))
     || (aiChatEnabled && aiProvider === 'openrouter')
     || (xAgentEnabled && xAgentProvider === 'openrouter');
   document.getElementById('chatgpt-fields').hidden = !needsChatGPT;
@@ -244,12 +254,14 @@ function showProviderFields() {
 }
 
 function showAiChatTools() {
+  const translationUsesChatGPT = document.getElementById('translationEnabled').checked
+    && document.getElementById('provider').value === 'chatgpt';
   const aiChatUsesChatGPT = document.getElementById('aiChatEnabled').checked
     && document.getElementById('aiChatProvider').value === 'chatgpt';
   const xAgentUsesChatGPT = document.getElementById('xAgentEnabled').checked
     && document.getElementById('xAgentProvider').value === 'chatgpt';
   const tools = document.getElementById('chatgpt-ai-tools');
-  if (tools) tools.hidden = !aiChatUsesChatGPT && !xAgentUsesChatGPT;
+  if (tools) tools.hidden = !translationUsesChatGPT && !aiChatUsesChatGPT && !xAgentUsesChatGPT;
 }
 
 function setControlDisabled(id, disabled) {
@@ -286,6 +298,12 @@ function showFeatureStates() {
   setControlDisabled('openrouterKey', !openRouterNeeded);
   setControlDisabled('openrouterModel', !openRouterNeeded);
   setControlDisabled('chatgptModel', !chatGPTNeeded);
+  setControlDisabled('chatgptConversationUrl', !chatGPTNeeded);
+  const configuredChatButton = document.getElementById('openConfiguredChatgpt');
+  if (configuredChatButton) {
+    configuredChatButton.disabled = !chatGPTNeeded
+      || !document.getElementById('chatgptConversationUrl').value.trim();
+  }
 
   setControlDisabled('aiChatProvider', aiChatOff);
   setControlDisabled('setupChatgptWindow', !chatGPTNeeded);
@@ -293,18 +311,26 @@ function showFeatureStates() {
   [
     'xAgentProvider', 'xAgentAutoSubmit', 'xAgentSoundEnabled', 'xAgentNotifyEnabled',
     'xAgentOpenReport', 'xAgentRunCount', 'xAgentDelayMinSeconds',
-    'xAgentDelayMaxSeconds', 'xAgentMemoryLimit', 'xAgentPrompt', 'startXAgent'
+    'xAgentDelayMaxSeconds', 'xAgentMemoryLimit', 'xAgentPrompt',
+    'xRelationshipPrompt', 'xRelationshipAutoLike',
+    'xRelationshipReplyToFollowers', 'startXAgent'
   ].forEach(id => setControlDisabled(id, xAgentOff));
 }
 
-async function setupChatGPTWindow() {
-  const btn = document.getElementById('setupChatgptWindow');
+async function setupChatGPTWindow(useConfiguredConversation = false) {
+  const btn = document.getElementById(
+    useConfiguredConversation ? 'openConfiguredChatgpt' : 'setupChatgptWindow'
+  );
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Setting up...';
   btn.title = '';
   try {
-    const resp = await chrome.runtime.sendMessage({ type: 'setup-chatgpt-window' });
+    if (useConfiguredConversation) await save();
+    const resp = await chrome.runtime.sendMessage({
+      type: 'setup-chatgpt-window',
+      useConfiguredConversation
+    });
     if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Could not set up ChatGPT window.');
     btn.textContent = 'Ready';
     setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1400);
@@ -559,6 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Провайдер
   document.getElementById('provider').addEventListener('change', async (event) => {
     showProviderFields();
+    showAiChatTools();
     showFeatureStates();
     if (event.target.value === 'gemini') {
       await save();
@@ -568,6 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('translationEnabled').addEventListener('change', () => {
     showProviderFields();
+    showAiChatTools();
     showFeatureStates();
   });
   document.getElementById('pageTranslationEnabled').addEventListener('change', showFeatureStates);
@@ -591,7 +619,9 @@ document.addEventListener('DOMContentLoaded', () => {
     showAiChatTools();
     showFeatureStates();
   });
-  document.getElementById('setupChatgptWindow').addEventListener('click', setupChatGPTWindow);
+  document.getElementById('setupChatgptWindow').addEventListener('click', () => setupChatGPTWindow(false));
+  document.getElementById('openConfiguredChatgpt').addEventListener('click', () => setupChatGPTWindow(true));
+  document.getElementById('chatgptConversationUrl').addEventListener('input', showFeatureStates);
   document.getElementById('startXAgent').addEventListener('click', startXAgentFromPopup);
   document.getElementById('openXAgentReport').addEventListener('click', openXAgentReport);
   document.getElementById('openRelationshipDashboard').addEventListener('click', openRelationshipDashboard);

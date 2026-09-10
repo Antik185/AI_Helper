@@ -6,6 +6,7 @@ const state = {
   authors: [],
   session: null,
   apiConfig: { ownHandle: '', hasToken: false, checkFollowBack: false },
+  replyToFollowers: false,
   filter: 'active',
   search: '',
   refreshingApi: false
@@ -88,7 +89,7 @@ function authorStats(author) {
     sent: sentItems.length,
     checked: verifiedItems.length,
     liked: verifiedItems.filter(item => (Number(item.replyLikeCount) || 0) > 0).length,
-    replied: verifiedItems.filter(item => item.authorReplied).length,
+    publiclyReplied: verifiedItems.filter(item => (Number(item.replyExternalCount) || 0) > 0).length,
     averageReplyScore: verifiedItems.length
       ? Math.round(verifiedItems.reduce((sum, item) => sum + replyPerformance(item).score, 0) / verifiedItems.length)
       : null
@@ -99,18 +100,18 @@ function relationshipProgress(author) {
   const stats = authorStats(author);
   const contactPoints = Math.min(20, stats.sent * 5);
   const audienceLikePoints = stats.checked ? Math.round((stats.liked / stats.checked) * 25) : 0;
-  const authorReplyPoints = stats.checked ? Math.round((stats.replied / stats.checked) * 35) : 0;
+  const publicReplyPoints = stats.checked ? Math.round((stats.publiclyReplied / stats.checked) * 35) : 0;
   const followingPoints = author.following === true ? 10 : 0;
   const score = author.followsBack
     ? 100
-    : Math.min(90, contactPoints + audienceLikePoints + authorReplyPoints + followingPoints);
+    : Math.min(90, contactPoints + audienceLikePoints + publicReplyPoints + followingPoints);
   return {
     score,
     verifiedReplies: stats.checked,
     parts: [
       { label: `${stats.sent} contacts`, points: contactPoints, active: stats.sent > 0 },
       { label: 'Replies with likes', points: audienceLikePoints, active: stats.liked > 0 },
-      { label: 'Author replies', points: authorReplyPoints, active: stats.replied > 0 },
+      { label: 'Public replies', points: publicReplyPoints, active: stats.publiclyReplied > 0 },
       { label: 'You follow', points: followingPoints, active: author.following === true }
     ]
   };
@@ -128,7 +129,7 @@ function renderStats() {
   const sent = state.authors.reduce((sum, author) => sum + authorStats(author).sent, 0);
   const checked = state.authors.reduce((sum, author) => sum + authorStats(author).checked, 0);
   const replyLikes = state.authors.reduce((sum, author) => sum + authorStats(author).liked, 0);
-  const authorReplies = state.authors.reduce((sum, author) => sum + authorStats(author).replied, 0);
+  const publicReplies = state.authors.reduce((sum, author) => sum + authorStats(author).publiclyReplied, 0);
   const contacted = state.authors.filter(author => authorStats(author).sent > 0).length;
   const verifiedReplyScores = state.authors.flatMap(author => {
     return (author.interactions || [])
@@ -146,7 +147,7 @@ function renderStats() {
   [
     [state.authors.length, 'Tracked authors'],
     [sent, 'Sent replies'],
-    [percent(authorReplies, checked), 'Author response rate'],
+    [percent(publicReplies, checked), 'Replies with public responses'],
     [percent(replyLikes, checked), 'Replies with likes'],
     [averageReplyScore === null ? '—' : `${averageReplyScore}/100`, 'Average reply score'],
     [averageRelationshipScore === null ? '—' : `${averageRelationshipScore}/100`, 'Relationship progress'],
@@ -166,21 +167,28 @@ function renderSession() {
   const active = !!author;
   banner.hidden = !active;
   resume.hidden = !active;
-  document.getElementById('startSession').disabled = !state.authors.some(item => item.status !== 'archived' && !item.followsBack);
+  document.getElementById('startSession').disabled = !state.authors.some(item => {
+    return item.status !== 'archived' && (state.replyToFollowers || !item.followsBack);
+  });
   if (!active) return;
   document.getElementById('sessionTitle').textContent = `Session active · ${state.session.index + 1}/${state.session.queue.length}`;
-  document.getElementById('sessionText').textContent = `Current author: @${author.handle}. Open X, prepare the draft, use the native Like/Follow controls, then complete the author.`;
+  document.getElementById('sessionText').textContent = state.session.auto
+    ? `Automatic session: @${author.handle}. AI Helper checks follow-back, replies to one unprocessed post, then continues to the next author.`
+    : `Current author: @${author.handle}. Open X, prepare the draft, use the native Like/Follow controls, then complete the author.`;
   resume.textContent = `Resume @${author.handle}`;
 }
 
 async function refresh() {
-  const [response, apiResponse] = await Promise.all([
+  const [response, apiResponse, settings] = await Promise.all([
     callRelationship('list'),
-    callRelationship('getApiConfig')
+    callRelationship('getApiConfig'),
+    chrome.storage.sync.get({ xRelationshipReplyToFollowers: false })
   ]);
   state.authors = response.authors || [];
   state.session = response.session || null;
   state.apiConfig = apiResponse.config || state.apiConfig;
+  state.replyToFollowers = settings.xRelationshipReplyToFollowers === true;
+  document.getElementById('replyToFollowers').checked = state.replyToFollowers;
   if (requestedAuthor && !requestedAuthorApplied) {
     requestedAuthorApplied = true;
     state.filter = 'all';
@@ -303,20 +311,6 @@ function renderInteraction(author, interaction) {
     hint: "First like +22, each next +5 (max +40). First direct reply +40, each next +10 (max +60). A continuation you post under somebody else's reply is not part of this count."
   }));
 
-  if (interaction.authorReplyText || interaction.authorReplyUrl) {
-    const response = el('div', 'author-response');
-    const responseDate = interaction.authorReplyAt ? ` · ${formatDate(interaction.authorReplyAt)}` : '';
-    response.appendChild(el('strong', '', `Author replied${responseDate}`));
-    if (interaction.authorReplyText) response.appendChild(el('p', '', interaction.authorReplyText));
-    if (interaction.authorReplyUrl) {
-      const responseLink = el('a', '', 'Open author response');
-      responseLink.href = interaction.authorReplyUrl;
-      responseLink.target = '_blank';
-      responseLink.rel = 'noreferrer';
-      response.appendChild(responseLink);
-    }
-    item.appendChild(response);
-  }
   if (interaction.checkError) item.appendChild(el('p', 'interaction-error', interaction.checkError));
 
   const context = el('div', 'interaction-context');
@@ -335,13 +329,13 @@ function renderInteraction(author, interaction) {
 
 function renderAuthor(author) {
   const stats = authorStats(author);
-  const card = el('article', 'author-card');
+  const card = el('article', author.followsBack ? 'author-card is-followed-back' : 'author-card');
   const main = el('div', 'author-main');
   const identity = el('div', 'author-identity');
   const name = el('div', 'author-name');
   name.appendChild(el('strong', '', author.displayName || `@${author.handle}`));
   const badgeClass = author.followsBack ? 'badge success' : author.status === 'archived' ? 'badge muted' : 'badge';
-  name.appendChild(el('span', badgeClass, author.followsBack ? 'Followed back' : author.status));
+  name.appendChild(el('span', badgeClass, author.followsBack ? 'Follows you' : author.status));
   identity.append(name, el('span', 'author-handle', `@${author.handle}`));
 
   const metric = (label, value) => {
@@ -368,7 +362,7 @@ function renderAuthor(author) {
     metric('Following', author.following === true ? 'Yes' : author.following === false ? 'No' : 'Unknown'),
     metric('Sent', String(stats.sent)),
     metric('Average reply', stats.averageReplyScore === null ? '—' : `${stats.averageReplyScore}/100`),
-    metric('Response rate', percent(stats.replied, stats.checked)),
+    metric('Public reply rate', percent(stats.publiclyReplied, stats.checked)),
     actions
   );
 
@@ -413,7 +407,7 @@ function renderAuthor(author) {
 function filteredAuthors() {
   const query = state.search.toLowerCase();
   return state.authors.filter(author => {
-    if (state.filter === 'active' && (author.status === 'archived' || author.followsBack)) return false;
+    if (state.filter === 'active' && author.status === 'archived') return false;
     if (state.filter === 'followed_back' && !author.followsBack) return false;
     if (state.filter === 'tracking' && (author.status !== 'tracking' || author.followsBack)) return false;
     if (state.filter === 'archived' && author.status !== 'archived') return false;
@@ -432,7 +426,10 @@ function render() {
 
 async function startSession() {
   await chrome.storage.sync.set({ xAgentEnabled: true });
-  const response = await callRelationship('startSession');
+  const response = await callRelationship('startSession', {
+    auto: true,
+    replyToFollowers: state.replyToFollowers
+  });
   state.authors = response.authors || [];
   state.session = response.session;
   render();
@@ -574,6 +571,41 @@ document.getElementById('importFile').addEventListener('change', async event => 
     event.target.value = '';
   }
 });
+document.getElementById('importHandles').addEventListener('click', () => {
+  document.getElementById('importHandlesFile').click();
+});
+document.getElementById('importHandlesFile').addEventListener('change', async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const response = await callRelationship('importHandles', { text: await file.text() });
+    state.authors = response.authors || state.authors;
+    state.session = response.session || state.session;
+    render();
+    const summary = response.importSummary || {};
+    const parts = [
+      `${summary.added || 0} added`,
+      `${summary.existing || 0} already in CRM`,
+      `${summary.duplicates || 0} duplicate lines`,
+      `${summary.invalid || 0} invalid lines`
+    ];
+    if (summary.limited) {
+      parts.push(`${summary.limited} skipped because the CRM limit is ${summary.maxAuthors || 100}`);
+    }
+    alert(`TXT import complete: ${parts.join(', ')}.`);
+  } catch (error) {
+    alert(`TXT import failed: ${error.message}`);
+  } finally {
+    event.target.value = '';
+  }
+});
+document.getElementById('replyToFollowers').addEventListener('change', async event => {
+  state.replyToFollowers = event.target.checked;
+  await chrome.storage.sync.set({
+    xRelationshipReplyToFollowers: state.replyToFollowers
+  });
+  render();
+});
 document.getElementById('resetData').addEventListener('click', async () => {
   if (!confirm('Delete every tracked author and all relationship history from this browser?')) return;
   await callRelationship('reset');
@@ -582,6 +614,11 @@ document.getElementById('resetData').addEventListener('click', async () => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (changes[AUTHORS_KEY] || changes[SESSION_KEY] || changes[API_CONFIG_KEY])) refresh().catch(() => {});
+  if (area === 'sync' && changes.xRelationshipReplyToFollowers) {
+    state.replyToFollowers = changes.xRelationshipReplyToFollowers.newValue === true;
+    document.getElementById('replyToFollowers').checked = state.replyToFollowers;
+    render();
+  }
 });
 
 refresh().catch(error => {

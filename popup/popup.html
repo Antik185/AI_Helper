@@ -98,6 +98,14 @@
           </select>
         </div>
       </div>
+      <div class="field">
+        <span class="field-label" data-i18n="chatgptConversationUrlLabel"></span>
+        <input id="chatgptConversationUrl" class="text-field" type="url"
+          placeholder="https://chatgpt.com/c/6a972ae9-60f0-83ed-a4ce-e3698c3c79e7">
+        <small class="hint-inline" data-i18n="chatgptConversationUrlHint"></small>
+        <button id="openConfiguredChatgpt" class="pp-secondary" type="button"
+          data-i18n="chatgptOpenConfigured"></button>
+      </div>
       <small class="hint-inline" data-i18n="chatgptHint"></small>
     </div>
 
@@ -286,6 +294,34 @@
         <span class="field-label">Agent prompt</span>
         <textarea id="xAgentPrompt" class="text-field text-area" rows="4"></textarea>
         <small class="hint-inline">Tell the agent how to reply: tone, length, emojis, and what to avoid. Reply language always follows the outgoing “Translate to” setting below.</small>
+      </div>
+
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Auto-like in Relationship Mode</div>
+          <div class="feature-sub">Like the author's post after X confirms that the CRM reply was sent.</div>
+        </div>
+        <label class="switch">
+          <input id="xRelationshipAutoLike" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="feature-row compact-feature">
+        <div>
+          <div class="feature-title">Reply to authors who follow you</div>
+          <div class="feature-sub">If off, Relationship Mode records the follow-back and moves to the next author.</div>
+        </div>
+        <label class="switch">
+          <input id="xRelationshipReplyToFollowers" type="checkbox">
+          <span class="switch-track"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Relationship Mode prompt</span>
+        <textarea id="xRelationshipPrompt" class="text-field text-area" rows="5"></textarea>
+        <small class="hint-inline">Used only for CRM authors. Describe how to build rapport and encourage a natural follow-back without sounding transactional.</small>
       </div>
       </div>
     </div>

@@ -120,12 +120,33 @@ p { margin: 0; color: #959ca8; line-height: 1.45; }
 .form-status { min-height: 18px; grid-column: 1 / -1; color: #66dc98; font-size: 12px; }
 .form-status.is-error { color: #ff8195; }
 
-.toolbar { display: flex; align-items: center; gap: 9px; margin: 15px 0; padding: 12px; }
-.toolbar input { width: min(340px, 100%); }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 15px 0; padding: 12px; }
+.toolbar > input { width: min(340px, 100%); }
+.toolbar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid #343a45;
+  border-radius: 11px;
+  color: #c9ced5;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.toolbar-toggle input { width: 17px; min-height: 17px; margin: 0; padding: 0; accent-color: #2ecc71; }
 .toolbar-spacer { flex: 1; }
 
 .authors { display: grid; gap: 12px; }
 .author-card { padding: 17px; border: 1px solid #252b34; border-radius: 18px; background: rgba(17, 21, 27, .92); }
+.author-card.is-followed-back {
+  border-color: rgba(46, 204, 113, .48);
+  background:
+    linear-gradient(120deg, rgba(46, 204, 113, .1), transparent 42%),
+    rgba(17, 21, 27, .94);
+  box-shadow: 0 0 0 1px rgba(46, 204, 113, .08), 0 12px 34px rgba(0, 0, 0, .18);
+}
 .author-main { display: grid; grid-template-columns: minmax(180px, 1.2fr) repeat(4, minmax(90px, .55fr)) auto; align-items: center; gap: 14px; }
 .author-identity { min-width: 0; }
 .author-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -210,7 +231,8 @@ p { margin: 0; color: #959ca8; line-height: 1.45; }
   .api-form { grid-template-columns: 1fr; }
   .api-form > *, .api-checkbox, .api-actions, .api-form .form-status, .api-warning { grid-column: 1; }
   .toolbar { align-items: stretch; flex-direction: column; }
-  .toolbar input, .toolbar select, .toolbar button { width: 100%; }
+  .toolbar > input, .toolbar select, .toolbar > button { width: 100%; }
+  .toolbar-toggle { width: 100%; }
   .toolbar-spacer { display: none; }
   .detail-grid { grid-template-columns: 1fr; }
   .interaction-context { grid-template-columns: 1fr; }
@@ -222,6 +244,11 @@ p { margin: 0; color: #959ca8; line-height: 1.45; }
   :root { color-scheme: light; background: #f5f6fa; color: #151820; }
   body { background: radial-gradient(circle at 12% -10%, rgba(108, 92, 231, .16), transparent 34rem), #f5f6fa; }
   .panel, .author-card, .stat { border-color: #dde1e8; background: rgba(255, 255, 255, .94); }
+  .author-card.is-followed-back {
+    border-color: rgba(31, 164, 86, .42);
+    background: linear-gradient(120deg, rgba(46, 204, 113, .11), transparent 42%), #fff;
+  }
+  .toolbar-toggle { border-color: #d4d9e1; color: #3b4450; }
   .api-panel[open] > summary { border-color: #dde1e8; }
   .session-banner { border-color: rgba(31, 164, 86, .35); background: rgba(225, 249, 235, .95); }
   input, select, textarea, .interaction { border-color: #d8dde5; background: #fff; color: #151820; }

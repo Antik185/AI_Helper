@@ -27,6 +27,12 @@ const X_RELATIONSHIP_TARGET_CLASS = 'dth-x-relationship-target';
 const X_RELATIONSHIP_ACTION_CLASS = 'dth-x-relationship-native-action';
 const X_RELATIONSHIP_AUTHORS_KEY = 'xRelationshipAuthors';
 const X_RELATIONSHIP_SESSION_KEY = 'xRelationshipSession';
+const X_FOLLOWS_BACK_LABELS = new Set([
+  'follows you', 'читает вас', 'подписан на вас', 'подписана на вас',
+  'читає вас', 'folgt dir', 'vous suit', 'te sigue', 'segue você',
+  'seni takip ediyor', 'obserwuje cię', 'يتابعك', '关注了你',
+  'フォローされています', 'ti segue', 'volgt jou', '나를 팔로우합니다'
+]);
 
 const LANG_LABELS = { uk: 'UA', be: 'BY', kk: 'KZ', ja: 'JP', zh: 'CN' };
 
@@ -786,6 +792,11 @@ let xRelationshipProfileCheckedAt = 0;
 let xRelationshipMarkingSubmit = false;
 let xRelationshipLastUrl = location.href;
 let xRelationshipPendingCompose = null;
+let xRelationshipAutomationTimer = null;
+let xRelationshipAutomationRunning = false;
+let xRelationshipAutomationStopRequested = false;
+let xRelationshipAutomationBlockedStep = '';
+let xRelationshipAutomationSessionId = '';
 const X_AGENT_ANIMATION_VIDEOS = {
   idle: chrome.runtime.getURL('animated/son/son-transparent.webm'),
   working: chrome.runtime.getURL('animated/kopaet/kopaet-transparent.webm')
@@ -857,14 +868,25 @@ async function syncRecentXRepliesFromApi() {
 async function refreshXRelationshipState(updateUi = true) {
   try {
     const response = await xRelationshipCommand('list');
+    const nextSessionId = String(response.session?.startedAt || '');
     xRelationshipState = {
       authors: Array.isArray(response.authors) ? response.authors : [],
       session: response.session || null
     };
+    if (!xRelationshipState.session?.active) {
+      xRelationshipAutomationStopRequested = true;
+    } else if (xRelationshipState.session.auto === true
+      && nextSessionId
+      && nextSessionId !== xRelationshipAutomationSessionId) {
+      xRelationshipAutomationStopRequested = false;
+      xRelationshipAutomationBlockedStep = '';
+    }
+    xRelationshipAutomationSessionId = nextSessionId;
     if (!xRelationshipState.session?.pendingInteractionId) xRelationshipPendingCompose = null;
     if (updateUi) {
       updateXRelationshipControls();
       scheduleXRelationshipScan(50);
+      scheduleXRelationshipAutomation(250);
       updateXAgentPanel();
     }
     return xRelationshipState;
@@ -900,7 +922,7 @@ function getXRelationshipProgressText() {
   const session = xRelationshipState.session;
   const author = currentXRelationshipAuthor();
   if (!session?.active || !author) return 'No active session';
-  return `${session.index + 1}/${session.queue.length} · @${author.handle}`;
+  return `${session.index + 1}/${session.queue.length} · @${author.handle}${author.followsBack ? ' · Follows you ✓' : ''}`;
 }
 
 function findXProfileFollowButton() {
@@ -922,15 +944,29 @@ function getCurrentXProfileDisplayName(handle) {
   return (index >= 0 ? text.slice(0, index) : text.split('\n')[0]).trim().slice(0, 160);
 }
 
+function normalizeXProfileLabel(value) {
+  return String(value || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[.:·•]+$/g, '')
+    .trim()
+    .toLocaleLowerCase();
+}
+
+function isXFollowsBackLabel(value) {
+  return X_FOLLOWS_BACK_LABELS.has(normalizeXProfileLabel(value));
+}
+
 function detectXFollowsBack() {
-  const exactLabels = new Set([
-    'follows you', 'читает вас', 'подписан на вас', 'подписана на вас',
-    'читає вас', 'folgt dir', 'vous suit', 'te sigue', 'segue você',
-    'seni takip ediyor', 'obserwuje cię', 'يتابعك', '关注了你', 'フォローされています'
-  ]);
-  return Array.from(document.querySelectorAll('main span'))
-    .filter(isVisible)
-    .some(span => exactLabels.has((span.textContent || '').trim().toLowerCase()));
+  const identity = document.querySelector('main [data-testid="UserName"]');
+  if (!identity) return false;
+  const scope = identity.parentElement || identity;
+  const candidates = [identity, ...scope.querySelectorAll('span, [aria-label], [title]')];
+  return candidates.filter(isVisible).some(element => {
+    return isXFollowsBackLabel(element.textContent)
+      || isXFollowsBackLabel(element.getAttribute?.('aria-label'))
+      || isXFollowsBackLabel(element.getAttribute?.('title'));
+  });
 }
 
 function getXRelationshipHandledPostIds(author) {
@@ -1021,6 +1057,28 @@ async function findNextXRelationshipTarget(author) {
   return null;
 }
 
+async function likeXRelationshipArticle(article) {
+  const postId = getXPostId(getTweetUrl(article));
+  const findArticle = () => {
+    if (article?.isConnected) return article;
+    if (!postId) return null;
+    return Array.from(document.querySelectorAll(TWEET_SELECTOR))
+      .find(candidate => getXPostId(getTweetUrl(candidate)) === postId) || null;
+  };
+  let currentArticle = findArticle();
+  if (!currentArticle) return false;
+  if (currentArticle.querySelector('[data-testid="unlike"]')) return true;
+  const likeButton = currentArticle.querySelector('[data-testid="like"]');
+  if (!likeButton) return false;
+  likeButton.click();
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await sleep(150);
+    currentArticle = findArticle();
+    if (currentArticle?.querySelector('[data-testid="unlike"]')) return true;
+  }
+  return false;
+}
+
 function scheduleXRelationshipScan(delay = 500) {
   if (xRelationshipScanTimer) return;
   xRelationshipScanTimer = setTimeout(() => {
@@ -1031,7 +1089,9 @@ function scheduleXRelationshipScan(delay = 500) {
     }
     updateXRelationshipControls();
     updateXRelationshipHighlights();
-    refreshCurrentXRelationshipProfile().catch(() => {});
+    refreshCurrentXRelationshipProfile()
+      .catch(() => {})
+      .finally(() => scheduleXRelationshipAutomation(250));
   }, delay);
 }
 
@@ -1047,7 +1107,11 @@ async function refreshCurrentXRelationshipProfile(force = false) {
     : author.following;
   const profileReady = !!follow || !!document.querySelector('main [data-testid="UserName"]');
   if (!profileReady) return;
-  const followsBack = profileReady ? detectXFollowsBack() : author.followsBack === true;
+  // Follow-back is treated as achieved once observed. A temporarily incomplete
+  // profile render must not downgrade the saved success state.
+  const followsBack = profileReady
+    ? detectXFollowsBack() || author.followsBack === true
+    : author.followsBack === true;
   const changed = following !== author.following || followsBack !== author.followsBack;
   const lastChecked = Date.parse(author.lastCheckedAt || '') || 0;
   const checkDue = now - lastChecked > 5 * 60 * 1000;
@@ -1465,6 +1529,11 @@ function createXAgentSettingsSection() {
   prompt.className = 'dth-x-agent-setting-input dth-x-agent-setting-prompt';
   bindXAgentSetting(prompt, 'xAgentPrompt');
 
+  const relationshipPrompt = document.createElement('textarea');
+  relationshipPrompt.rows = 5;
+  relationshipPrompt.className = 'dth-x-agent-setting-input dth-x-agent-setting-prompt';
+  bindXAgentSetting(relationshipPrompt, 'xRelationshipPrompt');
+
   const utilityActions = document.createElement('div');
   utilityActions.className = 'dth-x-agent-settings-utilities';
 
@@ -1508,6 +1577,13 @@ function createXAgentSettingsSection() {
       prompt,
       'Tone, language, length, emojis, and what to avoid.'
     ),
+    createXAgentToggleSetting('xRelationshipAutoLike', 'Auto-like in Relationship Mode'),
+    createXAgentToggleSetting('xRelationshipReplyToFollowers', 'Reply to authors who follow you'),
+    createXAgentSettingField(
+      'Relationship Mode prompt',
+      relationshipPrompt,
+      'Used only for tracked CRM authors. Define how to build rapport and encourage a natural follow-back.'
+    ),
     utilityActions
   );
   return section;
@@ -1546,7 +1622,7 @@ function createXRelationshipSection() {
     }));
     return element;
   };
-  const start = button('dth-x-relationship-start', 'Start tracked authors', startXRelationshipSession);
+  const start = button('dth-x-relationship-start', 'Start automatic session', startXRelationshipSession);
   const prepare = button('dth-x-relationship-prepare', 'Prepare reply', prepareCurrentXRelationshipReply);
   const complete = button('dth-x-relationship-complete', 'Next author →', completeCurrentXRelationshipAuthor);
   const skip = button('dth-x-relationship-skip', 'Skip', skipCurrentXRelationshipAuthor);
@@ -1830,8 +1906,10 @@ async function openReplyComposer(article) {
   return compose;
 }
 
-async function maybeSubmitReply(compose, forceDraft = false) {
-  if (forceDraft || !STATE.settings || STATE.settings.xAgentAutoSubmit !== true) return false;
+async function maybeSubmitReply(compose, forceDraft = false, forceSubmit = false) {
+  if (forceDraft) return false;
+  if (!forceSubmit && (!STATE.settings || STATE.settings.xAgentAutoSubmit !== true)) return false;
+  if (forceSubmit && xRelationshipAutomationStopRequested) return false;
   if (xAgentRunning) await waitWhileXAgentPaused();
   if (xAgentRunning && xAgentStopRequested) return false;
   await sleep(350);
@@ -1842,8 +1920,22 @@ async function maybeSubmitReply(compose, forceDraft = false) {
   return true;
 }
 
+async function waitForXReplySubmission(compose, attempts = 30) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    await sleep(200);
+    const remaining = (compose?.textContent || '')
+      .replace(/[\u200B\u200C\u200D]/g, '')
+      .trim();
+    if (!compose?.isConnected || !isVisible(compose) || !remaining) return true;
+  }
+  return false;
+}
+
 async function runXAgentReply(article, btn, options = {}) {
   if (!STATE.settings || STATE.settings.xAgentEnabled !== true) return;
+  if (xRelationshipAutomationRunning && !options.relationshipAuthor) {
+    return { ok: false, error: 'Relationship Mode is currently processing an author.' };
+  }
   if (btn && btn.dataset.state === 'thinking') return;
 
   xAgentActiveJobs++;
@@ -1891,7 +1983,14 @@ async function runXAgentReply(article, btn, options = {}) {
       xRelationshipPendingCompose = compose;
       await refreshXRelationshipState();
     }
-    const sent = await maybeSubmitReply(compose, options.forceDraft === true);
+    const sent = await maybeSubmitReply(
+      compose,
+      options.forceDraft === true,
+      options.forceSubmit === true
+    );
+    if (sent && !await waitForXReplySubmission(compose)) {
+      throw new Error('X did not confirm the reply submission. The CRM draft was kept for review.');
+    }
     if (sent && relationshipInteractionId) {
       try {
         await markCurrentXRelationshipReplySent(reply, await waitForPostedXRelationshipReply(reply));
@@ -1974,18 +2073,169 @@ function navigateToCurrentXRelationshipAuthor() {
     return true;
   }
   scheduleXRelationshipScan(50);
+  scheduleXRelationshipAutomation(350);
   updateXAgentPanel(`Relationship · @${author.handle}`);
   return false;
 }
 
+function getXRelationshipAutomationStep(author = currentXRelationshipAuthor()) {
+  const session = xRelationshipState.session;
+  if (!session?.active || !author) return '';
+  return `${session.startedAt || ''}:${session.index}:${author.id}`;
+}
+
+function scheduleXRelationshipAutomation(delay = 800) {
+  const session = xRelationshipState.session;
+  const author = currentXRelationshipAuthor();
+  const step = getXRelationshipAutomationStep(author);
+  if (!session?.active || session.auto !== true || !author) return;
+  if (xRelationshipAutomationStopRequested || xRelationshipAutomationRunning) return;
+  if (xRelationshipAutomationTimer || (step && step === xRelationshipAutomationBlockedStep)) return;
+  xRelationshipAutomationTimer = setTimeout(() => {
+    xRelationshipAutomationTimer = null;
+    runXRelationshipAutomation().catch(error => {
+      const blockedAuthor = currentXRelationshipAuthor();
+      xRelationshipAutomationBlockedStep = getXRelationshipAutomationStep(blockedAuthor);
+      const message = error?.message || String(error);
+      console.error('[DTH Relationship] automatic step failed', error);
+      updateXAgentPanel(`Relationship paused · ${message.slice(0, 80)}`);
+      showXRelationshipToast(`Relationship paused: ${message}`, true);
+      openXRelationshipPanel();
+    });
+  }, Math.max(0, delay));
+}
+
+async function waitForXRelationshipDelay(ms, expectedStep) {
+  let remaining = Math.max(0, Number(ms) || 0);
+  while (remaining > 0) {
+    if (xRelationshipAutomationStopRequested) return false;
+    if (getXRelationshipAutomationStep() !== expectedStep) return false;
+    const step = Math.min(250, remaining);
+    xAgentNextReplyMs = remaining;
+    updateXAgentPanel(`Relationship · next author in ${Math.ceil(remaining / 1000)}s`);
+    const started = Date.now();
+    await sleep(step);
+    remaining = Math.max(0, remaining - (Date.now() - started));
+  }
+  xAgentNextReplyMs = null;
+  return !xRelationshipAutomationStopRequested
+    && getXRelationshipAutomationStep() === expectedStep;
+}
+
+async function runXRelationshipAutomation() {
+  if (xRelationshipAutomationRunning || xRelationshipAutomationStopRequested) return;
+  xRelationshipAutomationRunning = true;
+  let scheduleAgain = false;
+  try {
+    await refreshXRelationshipState(false);
+    let author = currentXRelationshipAuthor();
+    let session = xRelationshipState.session;
+    if (!session?.active || session.auto !== true || !author) return;
+    const initialStep = getXRelationshipAutomationStep(author);
+    const initialAuthorId = author.id;
+    if (initialStep === xRelationshipAutomationBlockedStep) return;
+
+    if (currentXProfileHandle().toLowerCase() !== author.id) {
+      navigateToCurrentXRelationshipAuthor();
+      return;
+    }
+    if (!document.querySelector('main [data-testid="UserName"]')) {
+      scheduleAgain = true;
+      return;
+    }
+
+    updateXAgentPanel(`Relationship · checking @${author.handle}`);
+    await sleep(650);
+    await refreshCurrentXRelationshipProfile(true);
+    await refreshXRelationshipState(false);
+    author = currentXRelationshipAuthor();
+    session = xRelationshipState.session;
+    if (!session?.active || session.auto !== true || !author || author.id !== initialAuthorId) {
+      return;
+    }
+
+    if (author.followsBack && session.replyToFollowers !== true) {
+      showXRelationshipToast(`@${author.handle} follows you · moving to next author`);
+      await completeCurrentXRelationshipAuthor(author.id);
+      return;
+    }
+
+    const pending = currentXRelationshipPending();
+    if (pending) {
+      if (pending.interaction.status === 'sent') {
+        const waited = await waitForXRelationshipDelay(getRandomAgentDelayMs(), initialStep);
+        if (waited) await completeCurrentXRelationshipAuthor(author.id);
+        return;
+      }
+      throw new Error('An unsent Relationship draft already exists. Send it or press Skip.');
+    }
+
+    updateXAgentPanel(`Relationship · finding a new post by @${author.handle}`);
+    const article = await findNextXRelationshipTarget(author);
+    if (!article) {
+      showXRelationshipToast(`No new post found for @${author.handle} · skipped`);
+      await completeCurrentXRelationshipAuthor(author.id);
+      return;
+    }
+
+    article.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    await sleep(550);
+    ensureXAgentButtons();
+    const button = article.querySelector(`.${X_AGENT_BUTTON_CLASS}`);
+    const result = await runXAgentReply(article, button, {
+      forceSubmit: true,
+      recordRelationship: true,
+      relationshipAuthor: author,
+      throwOnError: false,
+      silent: true
+    });
+    if (!result?.ok) throw new Error(result?.error || 'AI reply failed.');
+    if (!result.sent) throw new Error('Reply was prepared but X did not confirm sending it.');
+
+    await refreshXRelationshipState(false);
+    const confirmed = currentXRelationshipPending();
+    if (!confirmed || confirmed.author.id !== author.id || confirmed.interaction.status !== 'sent') {
+      throw new Error('Reply was sent, but its CRM record was not confirmed.');
+    }
+
+    if (STATE.settings?.xRelationshipAutoLike === true) {
+      updateXAgentPanel(`Relationship · liking @${author.handle}'s post`);
+      const likedOriginal = await likeXRelationshipArticle(article);
+      if (likedOriginal) {
+        await xRelationshipCommand('patchInteraction', {
+          handle: author.handle,
+          interactionId: confirmed.interaction.id,
+          patch: { likedOriginal: true }
+        });
+        await refreshXRelationshipState(false);
+      } else {
+        showXRelationshipToast(`Reply sent, but the post by @${author.handle} could not be liked`, true);
+      }
+    }
+
+    const waited = await waitForXRelationshipDelay(getRandomAgentDelayMs(), initialStep);
+    if (waited) await completeCurrentXRelationshipAuthor(author.id);
+  } finally {
+    xRelationshipAutomationRunning = false;
+    xAgentNextReplyMs = null;
+    updateXAgentPanel();
+    if (scheduleAgain) scheduleXRelationshipAutomation(900);
+  }
+}
+
 async function startXRelationshipSession() {
-  if (xAgentRunning || xAgentActiveJobs > 0) {
+  if (xAgentRunning || xRelationshipAutomationRunning || xAgentActiveJobs > 0) {
     alert('Finish or stop the current X Agent job before starting Relationship Mode.');
     return;
   }
   updateXAgentPanel('Checking reply history');
+  xRelationshipAutomationStopRequested = false;
+  xRelationshipAutomationBlockedStep = '';
   await syncRecentXRepliesFromApi();
-  const response = await xRelationshipCommand('startSession');
+  const response = await xRelationshipCommand('startSession', {
+    auto: true,
+    replyToFollowers: STATE.settings?.xRelationshipReplyToFollowers === true
+  });
   xRelationshipState = { authors: response.authors || [], session: response.session || null };
   updateXRelationshipControls();
   if (!currentXRelationshipAuthor()) {
@@ -2022,10 +2272,11 @@ async function prepareCurrentXRelationshipReply() {
   if (result?.ok) updateXAgentPanel('Draft ready · send it in X');
 }
 
-async function completeCurrentXRelationshipAuthor() {
+async function completeCurrentXRelationshipAuthor(expectedAuthorId = '') {
   await refreshXRelationshipState(false);
   const author = currentXRelationshipAuthor();
   if (!author) return;
+  if (expectedAuthorId && author.id !== String(expectedAuthorId).toLowerCase()) return false;
   const pending = currentXRelationshipPending();
   if (pending && pending.interaction.status !== 'sent') {
     alert('The prepared reply is not marked as sent. Send it with the native X Reply button, or use Skip.');
@@ -2043,7 +2294,9 @@ async function completeCurrentXRelationshipAuthor() {
     ? String(followButton.dataset.testid || '').endsWith('-unfollow')
     : author.following;
   const profileReady = !!followButton || !!document.querySelector('main [data-testid="UserName"]');
-  const followsBack = profileReady ? detectXFollowsBack() : author.followsBack === true;
+  const followsBack = profileReady
+    ? detectXFollowsBack() || author.followsBack === true
+    : author.followsBack === true;
   const now = new Date().toISOString();
 
   if (pending) {
@@ -2061,7 +2314,9 @@ async function completeCurrentXRelationshipAuthor() {
     handle: author.handle,
     patch: { following, followsBack, lastCheckedAt: now }
   });
-  const response = await xRelationshipCommand('advanceSession');
+  const response = await xRelationshipCommand('advanceSession', {
+    expectedHandle: expectedAuthorId ? author.handle : ''
+  });
   xRelationshipPendingCompose = null;
   xRelationshipState = { authors: response.authors || [], session: response.session || null };
   updateXRelationshipControls();
@@ -2069,9 +2324,10 @@ async function completeCurrentXRelationshipAuthor() {
     updateXAgentPanel('Relationship session complete');
     playAgentSound('complete');
     chrome.runtime.sendMessage({ type: 'openXRelationshipDashboard' });
-    return;
+    return true;
   }
   navigateToCurrentXRelationshipAuthor();
+  return true;
 }
 
 async function skipCurrentXRelationshipAuthor() {
@@ -2092,6 +2348,10 @@ async function skipCurrentXRelationshipAuthor() {
 }
 
 async function endXRelationshipSession() {
+  xRelationshipAutomationStopRequested = true;
+  xRelationshipAutomationBlockedStep = '';
+  clearTimeout(xRelationshipAutomationTimer);
+  xRelationshipAutomationTimer = null;
   const response = await xRelationshipCommand('endSession');
   xRelationshipPendingCompose = null;
   xRelationshipState = { authors: response.authors || [], session: response.session || null };
@@ -2112,7 +2372,12 @@ function updateXRelationshipControls() {
   if (!section) return;
   const author = currentXRelationshipAuthor();
   const pending = currentXRelationshipPending();
-  const count = xRelationshipState.authors.filter(item => item.status !== 'archived' && !item.followsBack).length;
+  const replyToFollowers = xRelationshipState.session?.active
+    ? xRelationshipState.session.replyToFollowers === true
+    : STATE.settings?.xRelationshipReplyToFollowers === true;
+  const count = xRelationshipState.authors.filter(item => {
+    return item.status !== 'archived' && (replyToFollowers || !item.followsBack);
+  }).length;
   const countNode = section.querySelector('.dth-x-relationship-count');
   const progress = section.querySelector('.dth-x-relationship-progress');
   const hint = section.querySelector('.dth-x-relationship-hint');
@@ -2125,11 +2390,19 @@ function updateXRelationshipControls() {
   if (progress) progress.textContent = getXRelationshipProgressText();
   if (hint) {
     hint.textContent = author
-      ? pending
-        ? pending.interaction.status === 'sent'
-          ? 'Reply sent. Use native Like/Follow if needed, then press Next author.'
-          : 'Draft inserted. Send it with the native X Reply button.'
-        : 'Open the author profile and prepare one contextual draft.'
+      ? xRelationshipState.session?.auto
+        ? author.followsBack && !replyToFollowers
+          ? 'Follow-back detected. Moving to the next tracked author.'
+          : author.followsBack
+            ? 'Follow-back detected. Replying because replies to followers are enabled.'
+          : pending?.interaction.status === 'sent'
+            ? 'Reply sent. Waiting before the next tracked author.'
+            : 'Automatic mode checks the profile, replies to one new post, and continues.'
+        : pending
+          ? pending.interaction.status === 'sent'
+            ? 'Reply sent. Use native Like/Follow if needed, then press Next author.'
+            : 'Draft inserted. Send it with the native X Reply button.'
+          : 'Open the author profile and prepare one contextual draft.'
       : 'Only manually tracked authors are included.';
   }
   if (start) {
@@ -2137,17 +2410,23 @@ function updateXRelationshipControls() {
     start.disabled = count === 0 || xAgentRunning || xAgentActiveJobs > 0;
   }
   if (prepare) {
-    prepare.hidden = !author;
+    prepare.hidden = !author || xRelationshipState.session?.auto === true;
     prepare.disabled = !!pending || xAgentActiveJobs > 0;
   }
   if (complete) {
-    complete.hidden = !author || !pending || pending.interaction.status !== 'sent';
+    complete.hidden = !author
+      || xRelationshipState.session?.auto === true
+      || !pending
+      || pending.interaction.status !== 'sent';
     complete.disabled = false;
     complete.textContent = xRelationshipState.session.index + 1 < xRelationshipState.session.queue.length
       ? 'Next author →'
       : 'Finish session ✓';
   }
-  if (skip) skip.hidden = !author;
+  if (skip) {
+    skip.hidden = !author;
+    skip.disabled = xRelationshipAutomationRunning;
+  }
   if (end) end.hidden = !author;
   section.classList.toggle('is-active', !!author);
 }
@@ -2202,6 +2481,9 @@ function updateXAgentPanel(statusText) {
   } else if (xAgentRunning) {
     state = 'running';
     label = 'Running';
+  } else if (xRelationshipAutomationRunning) {
+    state = 'running';
+    label = xAgentPanelStatus || 'Relationship running';
   } else if (xAgentActiveJobs > 0) {
     state = 'running';
     label = 'Generating';
@@ -2234,7 +2516,9 @@ function updateXAgentPanel(statusText) {
     ? '—'
     : `${Math.max(0, xAgentNextReplyMs / 1000).toFixed(1)}s`;
   if (start) {
-    start.disabled = xAgentRunning;
+    start.disabled = xAgentRunning
+      || xRelationshipAutomationRunning
+      || (xRelationshipState.session?.active && xRelationshipState.session.auto === true);
     start.textContent = `▶ Start ${getAgentRunLimit()}`;
   }
   if (pause) {
@@ -2243,7 +2527,7 @@ function updateXAgentPanel(statusText) {
   }
   if (stop) stop.disabled = !xAgentRunning;
   xAgentPanel.dataset.state = state;
-  xAgentPanel.classList.toggle('is-running', xAgentRunning);
+  xAgentPanel.classList.toggle('is-running', xAgentRunning || xRelationshipAutomationRunning);
   updateXRelationshipControls();
   updateXAgentAnimation(state);
   if (previousState !== state) requestAnimationFrame(positionXAgentPanel);
@@ -2289,7 +2573,11 @@ function toReportItem(result) {
 }
 
 async function runXFeedAgent() {
-  if (xAgentRunning || !STATE.settings || STATE.settings.xAgentEnabled !== true) return;
+  if (xAgentRunning
+    || xRelationshipAutomationRunning
+    || (xRelationshipState.session?.active && xRelationshipState.session.auto === true)
+    || !STATE.settings
+    || STATE.settings.xAgentEnabled !== true) return;
   const limit = getAgentRunLimit();
   xAgentRunning = true;
   xAgentStopRequested = false;

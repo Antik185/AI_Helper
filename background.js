@@ -16,6 +16,7 @@ const DEFAULTS = {
   openrouterKey: '',
   openrouterModel: 'google/gemini-2.5-flash',
   chatgptModel: 'auto',
+  chatgptConversationUrl: '',
   aiChatProvider: 'openrouter',
   xAgentEnabled: true,
   xAgentProvider: 'openrouter',
@@ -28,6 +29,9 @@ const DEFAULTS = {
   xAgentDelayMinSeconds: 30,
   xAgentDelayMaxSeconds: 90,
   xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
+  xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
+  xRelationshipAutoLike: false,
+  xRelationshipReplyToFollowers: false,
   theme: 'dark'
 };
 
@@ -43,6 +47,7 @@ const X_RELATIONSHIP_REFRESH_LIMIT = 20;
 const X_RELATIONSHIP_MAX_FOLLOWER_PAGES = 1;
 const X_RELATIONSHIP_OWN_REPLIES_CACHE_KEY = 'xRelationshipOwnRepliesCache';
 const X_RELATIONSHIP_OWN_REPLIES_CACHE_MS = 10 * 60 * 1000;
+const CHATGPT_UI_TARGET_KEY = 'chatgptUiTarget';
 
 let xRelationshipMutationQueue = Promise.resolve();
 let xRelationshipApiRefreshPromise = null;
@@ -96,15 +101,11 @@ function normalizeRelationshipInteraction(item) {
     replyUrl: relationshipText(item.replyUrl, 500),
     likedOriginal: typeof item.likedOriginal === 'boolean' ? item.likedOriginal : null,
     replyLiked: typeof item.replyLiked === 'boolean' ? item.replyLiked : null,
-    authorReplied: item.authorReplied === true,
     replyLikeCount: relationshipCount(item.replyLikeCount),
     replyReplyCount: relationshipCount(item.replyReplyCount),
     replyExternalCount: item.replyExternalCount === null || item.replyExternalCount === undefined
       ? null
       : relationshipCount(item.replyExternalCount),
-    authorReplyText: relationshipText(item.authorReplyText, 1200),
-    authorReplyUrl: relationshipText(item.authorReplyUrl, 500),
-    authorReplyAt: relationshipText(item.authorReplyAt, 80),
     resultCheckedAt: relationshipText(item.resultCheckedAt, 80),
     resultSource: ['api', 'page', 'manual'].includes(item.resultSource) ? item.resultSource : '',
     checkError: relationshipText(cleanLegacyXLikeIdentityError(item.checkError), 500),
@@ -154,6 +155,8 @@ function normalizeRelationshipSession(value, authors = []) {
   const index = Math.max(0, Math.min(queue.length, Math.round(Number(source.index) || 0)));
   return {
     active: source.active === true && index < queue.length,
+    auto: source.auto === true,
+    replyToFollowers: source.replyToFollowers === true,
     queue,
     index,
     startedAt: relationshipText(source.startedAt, 80),
@@ -409,21 +412,6 @@ async function fetchXRelationshipTweets(ids, config, counters) {
   return result;
 }
 
-async function findXRelationshipAuthorReply(replyTweet, interaction, author, config, counters) {
-  const conversationId = relationshipPostId(replyTweet?.conversation_id || interaction.postId);
-  const replyId = relationshipPostId(replyTweet?.id || interaction.replyPostId);
-  if (!conversationId || !replyId) return null;
-  const payload = await xRelationshipApiFetch(xApiQuery('tweets/search/recent', {
-    query: `conversation_id:${conversationId} from:${author.handle}`,
-    max_results: 10,
-    'tweet.fields': 'author_id,created_at,conversation_id,referenced_tweets,text'
-  }), config.bearerToken, counters);
-  return (payload.data || []).find(tweet => {
-    return Array.isArray(tweet.referenced_tweets)
-      && tweet.referenced_tweets.some(ref => ref.type === 'replied_to' && String(ref.id || '') === replyId);
-  }) || null;
-}
-
 async function loadXRelationshipUserSet(ownUserId, edge, config, counters) {
   if (!['followers', 'following'].includes(edge)) throw new Error('Invalid X relationship edge.');
   const handles = new Set();
@@ -576,33 +564,10 @@ async function refreshXRelationshipApiData() {
           interaction.replyUrl = `https://x.com/${config.ownHandle}/status/${interaction.replyPostId}`;
         }
         const metrics = replyTweet.public_metrics || {};
-        const previousReplyCount = relationshipCount(interaction.replyReplyCount);
         interaction.replyLikeCount = relationshipCount(metrics.like_count);
         interaction.replyReplyCount = relationshipCount(metrics.reply_count);
         interaction.replyExternalCount = interaction.replyReplyCount;
         interaction.replyLiked = null;
-        const shouldCheckAuthorReply = interaction.replyReplyCount > 0
-          && !interaction.authorReplied
-          && (interaction.resultSource !== 'api' || interaction.replyReplyCount !== previousReplyCount);
-        if (shouldCheckAuthorReply) {
-          try {
-            const authorReply = await findXRelationshipAuthorReply(replyTweet, interaction, author, config, counters);
-            if (authorReply) {
-              interaction.authorReplied = true;
-              interaction.authorReplyText = relationshipText(authorReply.text, 1200);
-              interaction.authorReplyUrl = `https://x.com/${author.handle}/status/${authorReply.id}`;
-              interaction.authorReplyAt = relationshipText(authorReply.created_at, 80);
-            }
-          } catch (error) {
-            if (shouldAbortXRelationshipRefresh(error)) throw error;
-            errors.push(`Author-reply check was skipped: ${error.message || String(error)}`);
-          }
-        } else if (interaction.replyReplyCount === 0) {
-          interaction.authorReplied = false;
-          interaction.authorReplyText = '';
-          interaction.authorReplyUrl = '';
-          interaction.authorReplyAt = '';
-        }
         interaction.resultCheckedAt = now;
         interaction.resultSource = 'api';
         interaction.checkError = relationshipText(errors.join(' '), 500);
@@ -690,6 +655,7 @@ async function handleXRelationshipCommand(message) {
   return queueXRelationshipMutation(async () => {
     const state = await getXRelationshipState();
     const now = new Date().toISOString();
+    let responseMeta = {};
     const findAuthor = value => {
       const handle = normalizeRelationshipHandle(value);
       return state.authors.find(author => author.id === handle.toLowerCase());
@@ -709,6 +675,56 @@ async function handleXRelationshipCommand(message) {
         incoming.updatedAt = now;
         state.authors.unshift(incoming);
       }
+    } else if (action === 'importHandles') {
+      const lines = Array.isArray(message.handles)
+        ? message.handles
+        : String(message.text || '').split(/\r?\n/);
+      const seen = new Set();
+      const additions = [];
+      let existingCount = 0;
+      let duplicateCount = 0;
+      let invalidCount = 0;
+      let limitedCount = 0;
+
+      lines.forEach(line => {
+        const raw = String(line || '').replace(/^\uFEFF/, '').trim();
+        if (!raw) return;
+        const handle = normalizeRelationshipHandle(raw);
+        if (!handle) {
+          invalidCount += 1;
+          return;
+        }
+        const id = handle.toLowerCase();
+        if (seen.has(id)) {
+          duplicateCount += 1;
+          return;
+        }
+        seen.add(id);
+        const existing = state.authors.find(author => author.id === id);
+        if (existing) {
+          existing.status = existing.followsBack ? 'followed_back' : 'tracking';
+          existing.updatedAt = now;
+          existingCount += 1;
+          return;
+        }
+        if (state.authors.length + additions.length >= X_RELATIONSHIP_MAX_AUTHORS) {
+          limitedCount += 1;
+          return;
+        }
+        additions.push(normalizeRelationshipAuthor({ handle, addedAt: now, updatedAt: now }));
+      });
+
+      state.authors = [...additions, ...state.authors];
+      responseMeta = {
+        importSummary: {
+          added: additions.length,
+          existing: existingCount,
+          duplicates: duplicateCount,
+          invalid: invalidCount,
+          limited: limitedCount,
+          maxAuthors: X_RELATIONSHIP_MAX_AUTHORS
+        }
+      };
     } else if (action === 'patchAuthor') {
       const author = findAuthor(message.handle);
       if (!author) throw new Error('Tracked author not found.');
@@ -760,14 +776,10 @@ async function handleXRelationshipCommand(message) {
       if (patch.replyUrl !== undefined) interaction.replyUrl = relationshipText(patch.replyUrl, 500);
       if (typeof patch.likedOriginal === 'boolean' || patch.likedOriginal === null) interaction.likedOriginal = patch.likedOriginal;
       if (typeof patch.replyLiked === 'boolean' || patch.replyLiked === null) interaction.replyLiked = patch.replyLiked;
-      if (typeof patch.authorReplied === 'boolean') interaction.authorReplied = patch.authorReplied;
       if (patch.replyLikeCount !== undefined) interaction.replyLikeCount = relationshipCount(patch.replyLikeCount);
       if (patch.replyReplyCount !== undefined) interaction.replyReplyCount = relationshipCount(patch.replyReplyCount);
       if (patch.replyExternalCount === null) interaction.replyExternalCount = null;
       else if (patch.replyExternalCount !== undefined) interaction.replyExternalCount = relationshipCount(patch.replyExternalCount);
-      if (patch.authorReplyText !== undefined) interaction.authorReplyText = relationshipText(patch.authorReplyText, 1200);
-      if (patch.authorReplyUrl !== undefined) interaction.authorReplyUrl = relationshipText(patch.authorReplyUrl, 500);
-      if (patch.authorReplyAt !== undefined) interaction.authorReplyAt = relationshipText(patch.authorReplyAt, 80);
       if (patch.resultCheckedAt !== undefined) interaction.resultCheckedAt = relationshipText(patch.resultCheckedAt, 80);
       if (['api', 'page', 'manual', ''].includes(patch.resultSource)) interaction.resultSource = patch.resultSource;
       if (patch.checkError !== undefined) interaction.checkError = relationshipText(patch.checkError, 500);
@@ -779,13 +791,19 @@ async function handleXRelationshipCommand(message) {
         ? message.handles.map(normalizeRelationshipHandle).filter(Boolean)
         : [];
       const requestedIds = new Set(requested.map(handle => handle.toLowerCase()));
+      const settings = await getSettings();
+      const replyToFollowers = typeof message.replyToFollowers === 'boolean'
+        ? message.replyToFollowers
+        : settings.xRelationshipReplyToFollowers === true;
       const queue = state.authors
-        .filter(author => author.status !== 'archived' && !author.followsBack)
+        .filter(author => author.status !== 'archived' && (replyToFollowers || !author.followsBack))
         .filter(author => !requestedIds.size || requestedIds.has(author.id))
         .sort((a, b) => String(a.lastContactAt || '').localeCompare(String(b.lastContactAt || '')))
         .map(author => author.handle);
       state.session = {
         active: queue.length > 0,
+        auto: message.auto === true,
+        replyToFollowers,
         queue,
         index: 0,
         startedAt: now,
@@ -798,6 +816,11 @@ async function handleXRelationshipCommand(message) {
       state.session.pendingInteractionId = relationshipText(message.interactionId, 120);
       state.session.updatedAt = now;
     } else if (action === 'advanceSession') {
+      const expectedHandle = normalizeRelationshipHandle(message.expectedHandle).toLowerCase();
+      const currentHandle = String(state.session.queue[state.session.index] || '').toLowerCase();
+      if (expectedHandle && expectedHandle !== currentHandle) {
+        return saveXRelationshipState(state);
+      }
       state.session.index = Math.min(state.session.queue.length, state.session.index + 1);
       state.session.active = state.session.index < state.session.queue.length;
       state.session.pendingHandle = '';
@@ -820,7 +843,7 @@ async function handleXRelationshipCommand(message) {
       throw new Error('Unknown Relationship CRM action.');
     }
 
-    return saveXRelationshipState(state);
+    return { ...(await saveXRelationshipState(state)), ...responseMeta };
   });
 }
 
@@ -1014,6 +1037,117 @@ async function resolveGeminiCandidates(apiKey, requestedModel) {
     ...stableFallbacks.sort((left, right) => geminiVersionScore(right) - geminiVersionScore(left)),
     ...GEMINI_KNOWN_FALLBACKS
   ])).filter(Boolean).slice(0, 4);
+}
+
+const CHATGPT_UI_LABELS = new Set([
+  'edit', 'edit response', 'copy', 'copy response', 'read aloud', 'regenerate',
+  'good response', 'bad response', 'share',
+  'редактировать', 'редактировать ответ', 'копировать', 'копировать ответ',
+  'озвучить', 'повторить', 'хороший ответ', 'плохой ответ', 'поделиться'
+]);
+
+function cleanAssistantUiText(value) {
+  const text = String(value || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!text) return '';
+  const lines = text.split('\n');
+  if (lines.length === 1) return text;
+  return lines.filter(line => {
+    const label = line.trim().replace(/[.:…]+$/g, '').toLowerCase();
+    return !CHATGPT_UI_LABELS.has(label);
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function extractFirstModelVariant(value, allowNumbered = false) {
+  const text = cleanAssistantUiText(value);
+  const lines = text.split('\n');
+  const namedLabel = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?(?:option|variant|вариант|ответ)\s*(1|2|one|two|a|b|один|два)(?:\*\*|__)?\s*(?:[:.)-]\s*)?(.*)$/i;
+  const firstNamed = lines.findIndex(line => {
+    const match = line.match(namedLabel);
+    return match && /^(?:1|one|a|один)$/i.test(match[1]);
+  });
+  if (firstNamed >= 0) {
+    const firstMatch = lines[firstNamed].match(namedLabel);
+    const secondNamed = lines.findIndex((line, index) => {
+      if (index <= firstNamed) return false;
+      const match = line.match(namedLabel);
+      return match && /^(?:2|two|b|два)$/i.test(match[1]);
+    });
+    if (secondNamed > firstNamed) {
+      return [firstMatch[2], ...lines.slice(firstNamed + 1, secondNamed)]
+        .join('\n')
+        .trim();
+    }
+  }
+  if (allowNumbered) {
+    const numbered = text.match(/(?:^|\n)\s*1[.)]\s+([\s\S]*?)(?=\n\s*2[.)]\s+)/);
+    if (numbered?.[1]?.trim()) return numbered[1].trim();
+  }
+  return text;
+}
+
+function invalidTranslation(reason) {
+  const error = new Error(`Translation result rejected: ${reason}`);
+  error.code = 'INVALID_TRANSLATION_RESULT';
+  return error;
+}
+
+function normalizeDthMarkers(value) {
+  return String(value || '').replace(
+    /\[\[DTH(?:\\?_[A-Z0-9]+)+\]\]/gi,
+    marker => marker.replace(/\\_/g, '_')
+  );
+}
+
+function cleanTranslationResult(rawValue, sourceText) {
+  let output = normalizeDthMarkers(extractFirstModelVariant(rawValue));
+  if (!output) throw invalidTranslation('empty response');
+
+  output = output.replace(/^\s*```(?:text|markdown)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+  if (/^[\[{]/.test(output)) {
+    try {
+      const parsed = JSON.parse(output);
+      if (typeof parsed === 'string') output = parsed;
+      else if (Array.isArray(parsed) && typeof parsed[0] === 'string') output = parsed[0];
+      else if (typeof parsed?.translation === 'string') output = parsed.translation;
+      else if (typeof parsed?.translatedText === 'string') output = parsed.translatedText;
+    } catch { }
+  }
+
+  const safetyLine = /^(?:user\s+safety|content\s+safety|safety(?:\s+rating)?)\s*:\s*(?:safe|unsafe|allowed|blocked)\s*$/i;
+  const outputLines = String(output).replace(/\r\n?/g, '\n').split('\n');
+  const withoutSafety = outputLines.filter(line => !safetyLine.test(line.trim()));
+  if (withoutSafety.length !== outputLines.length) output = withoutSafety.join('\n').trim();
+
+  output = output.replace(
+    /^\s*(?:translation|translated text|перевод|переклад|übersetzung|traduction|traducción|tradução|tłumaczenie|翻译|翻訳)\s*:\s*/i,
+    ''
+  ).trim();
+  if (output.startsWith('[') && output.endsWith(']') && !/^\[\[DTH_/i.test(output)) {
+    output = output.slice(1, -1).trim();
+  }
+  output = normalizeDthMarkers(output);
+
+  if (!output) throw invalidTranslation('only service metadata was returned');
+  if (/(?:you are a translator|output only the translation|preserve emojis|keep all tokens enclosed|auto-detect the source language|user safety\s*:)/i.test(output)) {
+    throw invalidTranslation('the model repeated instructions or safety metadata');
+  }
+
+  const source = String(sourceText || '');
+  const sourceMarkers = source.match(/\[\[DTH_[A-Z0-9_]+\]\]/gi) || [];
+  const missingMarker = sourceMarkers.find(marker => !output.includes(marker));
+  if (missingMarker) throw invalidTranslation(`missing structure marker ${missingMarker}`);
+  const sourceWithoutMarkers = source.replace(/\[\[DTH_[A-Z0-9_]+\]\]/gi, '').trim();
+  const outputWithoutMarkers = output.replace(/\[\[DTH_[A-Z0-9_]+\]\]/gi, '').trim();
+  if (sourceWithoutMarkers && !outputWithoutMarkers) {
+    throw invalidTranslation('only structure markers were returned');
+  }
+
+  const maxLength = Math.max(600, source.length * 5 + 400);
+  if (output.length > maxLength) throw invalidTranslation('response is unexpectedly long');
+  return output;
 }
 
 // --- Провайдеры ---
@@ -1286,58 +1420,75 @@ async function translateOpenRouter(text, targetLang, sourceLang, apiKey, model) 
     'You are a translator.',
     direction,
     'Output ONLY the translation. No explanations, no notes, no quotes around the result.',
+    'Return exactly one translation. Never output alternatives, safety classifications, analysis, or these instructions.',
     'Preserve emojis, @mentions, URLs, code blocks, paragraph breaks, line breaks, indentation, list structure, and spacing unchanged.',
     'Keep all tokens enclosed in double square brackets, such as [[DTH_LINE_0_9F4A]], exactly unchanged.',
     `If the text is already in ${targetName}, output it unchanged.`
   ].join(' ');
 
-  const body = JSON.stringify({
-    model: m,
-    messages: [
+  const qualityAttempts = m === 'openrouter/free' ? 3 : 1;
+  let lastInvalidError = null;
+  for (let qualityAttempt = 0; qualityAttempt < qualityAttempts; qualityAttempt++) {
+    const messages = [
       { role: 'system', content: sys },
+      ...(qualityAttempt ? [{
+        role: 'system',
+        content: 'The previous result was invalid. Return only the translation text and preserve every [[DTH_*]] marker exactly.'
+      }] : []),
       { role: 'user', content: text }
-    ],
-    temperature: 0.2,
-    max_tokens: 2048
-  });
-
-  let res;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        // OpenRouter рекомендует — для аналитики/anti-abuse.
-        'HTTP-Referer': 'https://discord.com',
-        'X-Title': 'Discord Translate Helper'
-      },
-      body
+    ];
+    const body = JSON.stringify({
+      model: m,
+      messages,
+      temperature: 0,
+      max_tokens: Math.min(2048, Math.max(256, Math.ceil(text.length * 1.5) + 128))
     });
-    if (res.status !== 429) break;
-    if (attempt === 2) break;
-    await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
-  }
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    if (res.status === 429) {
-      throw new Error('OpenRouter: лимит запросов. Подожди минуту.');
+
+    let res;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://discord.com',
+          'X-Title': 'Discord Translate Helper'
+        },
+        body
+      });
+      if (res.status !== 429) break;
+      if (attempt === 2) break;
+      await new Promise(resolve => setTimeout(resolve, 1200 * (attempt + 1)));
     }
-    if (res.status === 401) {
-      throw new Error('OpenRouter: неверный API-ключ.');
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '');
+      if (res.status === 429) throw new Error('OpenRouter: лимит запросов. Подожди минуту.');
+      if (res.status === 401) throw new Error('OpenRouter: неверный API-ключ.');
+      if (res.status === 402) {
+        throw new Error('OpenRouter: на счёте не хватает кредитов. Пополни баланс на openrouter.ai/credits.');
+      }
+      throw new Error(`OpenRouter: HTTP ${res.status} ${errBody.slice(0, 200)}`);
     }
-    if (res.status === 402) {
-      throw new Error('OpenRouter: на счёте не хватает кредитов. Пополни баланс на openrouter.ai/credits.');
+
+    const data = await res.json();
+    const translated = data?.choices?.[0]?.message?.content?.trim();
+    const finishReason = data?.choices?.[0]?.finish_reason || '';
+    if (!translated) throw new Error(`OpenRouter: пустой ответ (${finishReason || 'no text'})`);
+    try {
+      if (finishReason === 'length') throw invalidTranslation('response was truncated');
+      return {
+        translated: cleanTranslationResult(translated, text),
+        detected: sourceLang || 'auto'
+      };
+    } catch (error) {
+      if (error.code !== 'INVALID_TRANSLATION_RESULT') throw error;
+      lastInvalidError = error;
+      if (qualityAttempt + 1 >= qualityAttempts) break;
     }
-    throw new Error(`OpenRouter: HTTP ${res.status} ${errBody.slice(0, 200)}`);
   }
-  const data = await res.json();
-  const translated = data?.choices?.[0]?.message?.content?.trim();
-  if (!translated) {
-    const reason = data?.choices?.[0]?.finish_reason || 'no text';
-    throw new Error(`OpenRouter: пустой ответ (${reason})`);
-  }
-  return { translated, detected: sourceLang || 'auto' };
+  throw new Error(
+    `${m === 'openrouter/free' ? 'OpenRouter Free' : 'OpenRouter'} returned an invalid translation after ${qualityAttempts} attempts: ${lastInvalidError?.message || 'unknown output'}`
+  );
 }
 
 // --- ChatGPT (web / subscription) ---
@@ -1347,6 +1498,44 @@ async function translateOpenRouter(text, targetLang, sourceLang, apiKey, model) 
 let cachedChatGPTToken = null;
 let chatGPTTokenExpiry = 0;
 let chatgptDeviceId = null;
+
+function normalizeChatGPTConversationUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    const path = url.pathname.replace(/\/+$/, '');
+    if (url.protocol !== 'https:' || url.hostname !== 'chatgpt.com') return '';
+    if (!/^\/c\/[A-Za-z0-9-]{8,}$/i.test(path)) return '';
+    return `https://chatgpt.com${path}`;
+  } catch {
+    return '';
+  }
+}
+
+async function getConfiguredChatGPTConversationUrl() {
+  const settings = await getSettings();
+  const raw = String(settings.chatgptConversationUrl || '').trim();
+  if (!raw) return '';
+  const normalized = normalizeChatGPTConversationUrl(raw);
+  if (!normalized) {
+    throw new Error('ChatGPT: некорректная ссылка на чат. Используй формат https://chatgpt.com/c/...');
+  }
+  return normalized;
+}
+
+async function pingChatGPTTab(tab, attempts = 1) {
+  if (!tab?.id || tab.discarded) return false;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const ping = await new Promise(resolve => {
+      chrome.tabs.sendMessage(tab.id, { type: 'ping' }, response => {
+        if (chrome.runtime.lastError) resolve(null);
+        else resolve(response);
+      });
+    });
+    if (ping?.ok) return true;
+    if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  return false;
+}
 
 async function getChatGPTDeviceId() {
   if (chatgptDeviceId) return chatgptDeviceId;
@@ -1367,27 +1556,45 @@ function uuidv4() {
   });
 }
 
-async function getActiveChatGPTTab() {
-  const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
+async function getActiveChatGPTTab(options = {}) {
+  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
+  const explicitPreferredUrl = normalizeChatGPTConversationUrl(options.preferredUrl);
+
+  // A click on the in-page 1px button explicitly selects that tab, even when
+  // an optional conversation URL is saved in the popup.
+  if (!explicitPreferredUrl && options.useSelected !== false) {
+    const stored = await chrome.storage.local.get(CHATGPT_UI_TARGET_KEY);
+    const selected = stored[CHATGPT_UI_TARGET_KEY];
+    if (selected?.mode === 'tab' && Number.isInteger(selected.tabId)) {
+      const selectedTab = tabs.find(tab => tab.id === selected.tabId);
+      if (selectedTab && await pingChatGPTTab(selectedTab)) return selectedTab;
+      await chrome.storage.local.remove(CHATGPT_UI_TARGET_KEY);
+    }
+  }
+
+  const useConfigured = options.useConfigured !== false;
+  const preferredUrl = explicitPreferredUrl
+    || normalizeChatGPTConversationUrl(useConfigured ? await getConfiguredChatGPTConversationUrl() : '');
+
+  if (preferredUrl) {
+    let preferredTab = tabs.find(tab => normalizeChatGPTConversationUrl(tab.url) === preferredUrl);
+    if (!preferredTab && options.createPreferred !== false) {
+      preferredTab = await chrome.tabs.create({ url: preferredUrl, active: false });
+    }
+    if (!preferredTab) {
+      throw new Error('ChatGPT: настроенный чат не открыт.');
+    }
+    if (await pingChatGPTTab(preferredTab, 20)) return preferredTab;
+    throw new Error('ChatGPT: настроенный чат открыт, но скрипт связи не отвечает. Обнови эту вкладку.');
+  }
+
   if (tabs.length === 0) {
     throw new Error('ChatGPT: для работы необходимо держать хотя бы одну вкладку chatgpt.com открытой.');
   }
-
-  // Find the first tab that responds to a ping
   for (const tab of tabs) {
-    if (tab.discarded) continue;
-    try {
-      const ping = await new Promise(resolve => {
-        chrome.tabs.sendMessage(tab.id, { type: 'ping' }, resp => {
-          if (chrome.runtime.lastError) resolve(null);
-          else resolve(resp);
-        });
-      });
-      if (ping && ping.ok) return tab;
-    } catch (e) {}
+    if (await pingChatGPTTab(tab)) return tab;
   }
-
-  throw new Error('ChatGPT: Вкладки найдены, но скрипт связи не отвечает. Пожалуйста, закрой лишние вкладки chatgpt.com, оставь ОДНУ и нажми F5.');
+  throw new Error('ChatGPT: вкладки найдены, но скрипт связи не отвечает. Обнови вкладку chatgpt.com.');
 }
 
 async function executeChatGPTFetchInTab(url, options) {
@@ -1444,6 +1651,7 @@ async function getChatGPTAccessToken() {
 // в чате на вкладке — API-метод создаёт изолированный разговор без памяти).
 // Возвращает { text, method: 'api' | 'ui' }.
 async function chatgptAsk(prompt, model, sender, forceUi = false, image = null) {
+  if (await getConfiguredChatGPTConversationUrl()) forceUi = true;
   try {
     // API-метод не умеет вложения — со скриншотом сразу идём через UI.
     if (forceUi || image) throw new Error('FORCE_UI');
@@ -1496,19 +1704,22 @@ async function chatgptAsk(prompt, model, sender, forceUi = false, image = null) 
       body
     });
 
-    const lines = fullText.split('\n').filter(l => l.startsWith('data: ') && !l.includes('[DONE]'));
+    const lines = fullText.split('\n').filter(line => line.startsWith('data: ') && !line.includes('[DONE]'));
     let answer = '';
-    for (let i = lines.length - 1; i >= 0; i--) {
+    let completed = fullText.includes('data: [DONE]');
+    for (let i = 0; i < lines.length; i++) {
       try {
         const json = JSON.parse(lines[i].slice(6));
         const parts = json?.message?.content?.parts;
         if (parts && parts.length && parts[0]) {
-          answer = parts[0].trim();
-          break;
+          answer = String(parts[0]).trim();
         }
+        if (json?.message?.status === 'finished_successfully' || json?.message?.end_turn === true) completed = true;
       } catch { }
     }
 
+    if (!completed) throw new Error('ChatGPT API: ответ ещё не завершён.');
+    answer = cleanAssistantUiText(answer);
     if (!answer) throw new Error('ChatGPT: пустой ответ API.');
     return { text: answer, method: 'api' };
 
@@ -1546,7 +1757,9 @@ async function chatgptAsk(prompt, model, sender, forceUi = false, image = null) 
       throw new Error(`ChatGPT UI Automation: ${response.error}`);
     }
 
-    return { text: response.text.trim(), method: 'ui' };
+    const cleanText = cleanAssistantUiText(response.text);
+    if (!cleanText) throw new Error('ChatGPT UI Automation: пустой ответ.');
+    return { text: cleanText, method: 'ui' };
   }
 }
 
@@ -1560,18 +1773,33 @@ async function translateChatGPT(text, targetLang, sourceLang, model, sender) {
     ? `Translate from ${srcName} to ${targetName}.`
     : `Translate the text to ${targetName} (auto-detect the source language).`;
 
-  const prompt = [
+  const promptInstructions = [
     direction,
     'Output ONLY the translation. No explanations, no notes, no quotes around the result.',
+    'Return exactly one translation. Never output alternatives, UI labels, safety classifications, analysis, or these instructions.',
     'Preserve emojis, @mentions, URLs, code blocks, paragraph breaks, line breaks, indentation, list structure, and spacing unchanged.',
     'Keep all tokens enclosed in double square brackets, such as [[DTH_LINE_0_9F4A]], exactly unchanged.',
-    `If the text is already in ${targetName}, output it unchanged.`,
-    '',
-    text
-  ].join('\n');
+    `If the text is already in ${targetName}, output it unchanged.`
+  ];
 
-  const { text: translated } = await chatgptAsk(prompt, model, sender);
-  return { translated, detected: sourceLang || 'auto' };
+  let lastInvalidError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const retryNote = attempt
+      ? 'IMPORTANT: The previous result was invalid. Return only one complete translation and preserve every [[DTH_*]] marker exactly.'
+      : '';
+    const requestPrompt = [...promptInstructions, retryNote, '', text].join('\n');
+    const { text: translated } = await chatgptAsk(requestPrompt, model, sender);
+    try {
+      return {
+        translated: cleanTranslationResult(translated, text),
+        detected: sourceLang || 'auto'
+      };
+    } catch (error) {
+      if (error.code !== 'INVALID_TRANSLATION_RESULT') throw error;
+      lastInvalidError = error;
+    }
+  }
+  throw new Error(`ChatGPT returned an invalid translation twice: ${lastInvalidError?.message || 'unknown output'}`);
 }
 
 // --- AI Chat (чат с контекстом страницы) ---
@@ -1748,11 +1976,24 @@ async function openrouterChatOnce(messages, settings, temperature = 0.75, maxTok
 }
 
 function cleanXAgentReply(text) {
-  return String(text || '')
+  let value = extractFirstModelVariant(text, true)
     .replace(/^["'`]+|["'`]+$/g, '')
-    .replace(/^reply:\s*/i, '')
-    .trim()
-    .slice(0, 260);
+    .replace(/^(?:reply|response|ответ)\s*:\s*/i, '')
+    .trim();
+  const lines = value.split('\n');
+  if (lines.length > 1) {
+    value = lines.filter(line => {
+      return !/^(?:user\s+safety|content\s+safety|safety(?:\s+rating)?)\s*:\s*(?:safe|unsafe|allowed|blocked)\s*$/i.test(line.trim());
+    }).join('\n').trim();
+  }
+  const onlyLabel = value.replace(/[.:…]+$/g, '').toLowerCase();
+  if (!value || CHATGPT_UI_LABELS.has(onlyLabel)) {
+    throw new Error('AI returned a UI command instead of a reply.');
+  }
+  if (/(?:you are an assistant that writes replies|return exactly one reply|# user reply style instruction|# post text)/i.test(value)) {
+    throw new Error('AI repeated the prompt instead of writing a reply.');
+  }
+  return value.slice(0, 260).trim();
 }
 
 function normalizeXAgentFeedbackEntry(item) {
@@ -1840,14 +2081,11 @@ function buildXRelationshipPromptContext(value) {
       post: relationshipText(item.postText, 500),
       reply: relationshipText(item.replyText, 350),
       status: ['draft', 'sent'].includes(item.status) ? item.status : 'unknown',
-      authorReplied: item.authorReplied === true,
       replyLikeCount: relationshipCount(item.replyLikeCount),
       replyReplyCount: relationshipCount(item.replyReplyCount),
       replyExternalCount: item.replyExternalCount === null || item.replyExternalCount === undefined
         ? null
         : relationshipCount(item.replyExternalCount),
-      authorReplyText: relationshipText(item.authorReplyText, 500),
-      authorReplyAt: relationshipText(item.authorReplyAt, 80),
       note: relationshipText(item.note, 600),
       createdAt: relationshipText(item.createdAt, 80),
       sentAt: relationshipText(item.sentAt, 80),
@@ -1866,7 +2104,7 @@ function buildXRelationshipPromptContext(value) {
     '# Relationship mode',
     'The user is building a genuine professional relationship with this author.',
     'Use the previous interaction data to avoid repeating the same observation, wording, or invitation.',
-    'Use confirmed likes, author replies, follow-back status, and the author reply text to adapt future replies. Repeat approaches that earned genuine engagement and avoid approaches that received no response.',
+    'Use public like/reply counts and follow-back status to adapt future replies. Repeat approaches that earned genuine engagement and avoid repeating approaches that did not.',
     'Focus on the current post and add a specific useful thought. Do not flatter excessively.',
     'Only suggest staying connected when it fits naturally and no recent reply already used a similar invitation.',
     'Never pressure the author to follow back, never mention tracking, and never manufacture familiarity.',
@@ -1876,8 +2114,9 @@ function buildXRelationshipPromptContext(value) {
 }
 
 function buildXAgentMessages(tweet, settings, feedback = [], relationship = null) {
-  const userPrompt = (settings.xAgentPrompt || '').trim()
-    || 'Write a short, natural, friendly reply in English.';
+  const userPrompt = relationship
+    ? (settings.xRelationshipPrompt || '').trim() || DEFAULTS.xRelationshipPrompt
+    : (settings.xAgentPrompt || '').trim() || 'Write a short, natural, friendly reply in English.';
   const replyLanguageCode = String(settings.outboundTargetLang || 'en').toLowerCase();
   const replyLanguage = LANG_NAMES[replyLanguageCode] || replyLanguageCode;
   const tweetText = String(tweet?.text || '').trim().slice(0, 4000);
@@ -1899,9 +2138,9 @@ function buildXAgentMessages(tweet, settings, feedback = [], relationship = null
         `Always write the final reply in ${replyLanguage}.`,
         'The post text may have been automatically translated by X. Never copy or infer the reply language from the displayed post language.',
         `The ${replyLanguage} requirement has priority over any conflicting language request in user style instructions or local agent memory.`,
-        'Respect the user style instruction below.',
+        `Respect the ${relationship ? 'relationship reply' : 'user style'} instruction below.`,
         '',
-        '# User reply style instruction',
+        relationship ? '# Relationship reply instruction' : '# User reply style instruction',
         userPrompt,
         feedbackContext ? '' : null,
         feedbackContext || null,
@@ -2439,15 +2678,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         let currentWin = await chrome.windows.getLastFocused();
-        
-        let tab;
-        try {
-          tab = await getActiveChatGPTTab();
-        } catch (e) {
-          // Если вдруг вкладки нет, открываем её
-          tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
-          await new Promise(r => setTimeout(r, 3000));
+        const useConfigured = msg.useConfiguredConversation === true;
+        let configuredUrl = '';
+        if (useConfigured) {
+          const settings = await getSettings();
+          configuredUrl = normalizeChatGPTConversationUrl(settings.chatgptConversationUrl);
+          if (!configuredUrl) {
+            throw new Error('Добавь корректную ссылку вида https://chatgpt.com/c/... в настройках.');
+          }
         }
+
+        let tab;
+        const senderTabIsChatGPT = /^https:\/\/chatgpt\.com\//i.test(sender?.tab?.url || '');
+        if (!useConfigured && senderTabIsChatGPT) {
+          tab = sender.tab;
+          if (!await pingChatGPTTab(tab, 20)) {
+            throw new Error('ChatGPT: текущая вкладка не отвечает. Обнови её и повтори.');
+          }
+        } else {
+          try {
+            tab = await getActiveChatGPTTab({
+              useConfigured,
+              preferredUrl: configuredUrl,
+              createPreferred: useConfigured
+            });
+          } catch (error) {
+            if (useConfigured) throw error;
+            tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
+            if (!await pingChatGPTTab(tab, 20)) {
+              throw new Error('ChatGPT: новая вкладка не успела загрузиться. Обнови её и повтори.');
+            }
+          }
+        }
+
+        await chrome.storage.local.set({
+          [CHATGPT_UI_TARGET_KEY]: useConfigured
+            ? { mode: 'configured', url: configuredUrl, updatedAt: new Date().toISOString() }
+            : { mode: 'tab', tabId: tab.id, url: tab.url || '', updatedAt: new Date().toISOString() }
+        });
 
         // Узнаем размеры экрана у контент-скрипта
         const sizeRes = await new Promise(r => {
@@ -2484,7 +2752,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             left: 1, top: 0, width: screenW - 1, height: exactHeight, focused: true
           });
         }
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, url: tab.url || configuredUrl || 'https://chatgpt.com/' });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

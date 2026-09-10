@@ -19,7 +19,7 @@
       </div>
       <div class="hero-actions">
         <button id="refreshResults" type="button">Refresh data</button>
-        <button id="startSession" class="primary" type="button">Start relationship session</button>
+        <button id="startSession" class="primary" type="button">Start automatic relationship session</button>
         <button id="resumeSession" type="button" hidden>Resume current session</button>
       </div>
     </header>
@@ -38,12 +38,13 @@
     <details class="panel api-panel">
       <summary>
         <span>X API connection <span id="apiBadge" class="badge muted">Optional</span></span>
-        <small>Updates reply links, total engagement, author responses, and follow-backs</small>
+        <small>Updates your reply links, public engagement totals, and optional follow-backs</small>
       </summary>
       <form id="apiForm" class="api-form">
         <label>
-          <span>Your X handle</span>
+          <span>Your X handle (used to find your replies)</span>
           <input id="ownHandle" type="text" placeholder="@your_handle" autocomplete="off">
+          <small>Required because an app-only Bearer Token does not identify which X account is yours.</small>
         </label>
         <label>
           <span>Read-only Bearer Token</span>
@@ -58,7 +59,7 @@
           <button id="clearApiToken" class="danger subtle" type="button">Remove saved token</button>
         </div>
         <p id="apiStatus" class="form-status" role="status"></p>
-        <p class="api-warning">The app-only token stays in Chrome local storage and is never exported. A normal refresh batch-reads at most 20 of your replies. Author-response search runs only after the public reply count increases. Follow-back scanning is optional and cached for the UTC day because X API charges per returned resource.</p>
+        <p class="api-warning">The app-only token stays in Chrome local storage and is never exported. A normal refresh batch-reads at most 20 of your replies and stores only aggregate public like/reply counts. Follow-back scanning is optional and cached for the UTC day because X API charges per returned resource.</p>
       </form>
     </details>
 
@@ -78,16 +79,22 @@
     <section class="toolbar panel">
       <input id="search" type="search" placeholder="Search handles, names, or notes">
       <select id="filter">
-        <option value="active">Active</option>
+        <option value="active">All active</option>
         <option value="all">All authors</option>
-        <option value="followed_back">Followed back</option>
+        <option value="followed_back">Follows you</option>
         <option value="tracking">Tracking</option>
         <option value="archived">Archived</option>
       </select>
+      <label class="toolbar-toggle">
+        <input id="replyToFollowers" type="checkbox">
+        <span>Reply to authors who follow you</span>
+      </label>
       <div class="toolbar-spacer"></div>
       <button id="exportData" type="button">Export JSON</button>
-      <button id="importData" type="button">Import JSON</button>
+      <button id="importData" type="button">Import CRM JSON</button>
       <input id="importFile" type="file" accept="application/json,.json" hidden>
+      <button id="importHandles" type="button">Import handles TXT</button>
+      <input id="importHandlesFile" type="file" accept="text/plain,.txt" hidden>
       <button id="resetData" class="danger subtle" type="button">Reset CRM</button>
     </section>
 

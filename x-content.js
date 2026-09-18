@@ -159,6 +159,32 @@ function findActiveCompose() {
   return null;
 }
 
+function getFocusedXCompose() {
+  const active = document.activeElement;
+  if (!active?.matches) return null;
+  return COMPOSE_SELECTORS.some(selector => active.matches(selector)) ? active : null;
+}
+
+function isReusableXReplyCompose(compose, article) {
+  if (!compose || !article || !document.body.contains(compose) || !isVisible(compose)) {
+    return false;
+  }
+  if (article.contains(compose)) return true;
+  if (compose.closest('[role="dialog"]')) return false;
+  const articlePostId = getXPostId(getTweetUrl(article));
+  const pagePostId = getXPostId(location.href);
+  return !!articlePostId && articlePostId === pagePostId;
+}
+
+function findExistingReplyComposer(article, preferredCompose = null) {
+  const candidates = [preferredCompose, getFocusedXCompose()];
+  return candidates.find((compose, index) => {
+    return compose
+      && candidates.indexOf(compose) === index
+      && isReusableXReplyCompose(compose, article);
+  }) || null;
+}
+
 function composeHasText(el) {
   if (!el) return false;
   return (el.textContent || '').trim().length > 0;
@@ -1895,7 +1921,12 @@ function setAgentButtonState(btn, state, title) {
   if (title) btn.title = title;
 }
 
-async function openReplyComposer(article) {
+async function openReplyComposer(article, preferredCompose = null) {
+  const existing = findExistingReplyComposer(article, preferredCompose);
+  if (existing) {
+    STATE.activeCompose = existing;
+    return existing;
+  }
   const before = new Set(Array.from(document.querySelectorAll(COMPOSE_SELECTORS.join(','))));
   const replyBtn = findReplyButton(article);
   if (!replyBtn) throw new Error('Reply button not found.');
@@ -1950,6 +1981,7 @@ async function runXAgentReply(article, btn, options = {}) {
   const postAuthor = getTweetAuthorMeta(article);
   const relationshipAuthor = options.relationshipAuthor || trackedXAuthor(postAuthor.handle) || null;
   const recordRelationship = !!relationshipAuthor && options.recordRelationship !== false;
+  const preferredCompose = findExistingReplyComposer(article);
   try {
     if (!payload.text) throw new Error('Tweet text not found.');
     const resp = await callBackground({
@@ -1960,7 +1992,7 @@ async function runXAgentReply(article, btn, options = {}) {
     const reply = String(resp.reply || '').trim();
     if (!reply) throw new Error('Empty AI reply.');
 
-    const compose = await openReplyComposer(article);
+    const compose = await openReplyComposer(article, preferredCompose);
     await replaceComposeText(compose, reply);
     let relationshipInteractionId = '';
     if (recordRelationship) {

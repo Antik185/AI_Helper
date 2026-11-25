@@ -38,9 +38,9 @@ function createAgent({ afterSleep } = {}) {
 test('before-reply delay draws from the configured bounds each time', () => {
   const agent = createAgent();
   const draw = () => vm.runInContext('getRandomAgentDelayMs(X_AGENT_BEFORE_REPLY)', agent);
-  assert.equal(draw(), 5000);
+  assert.equal(draw(), 1000);
   agent.Math.random = () => 0.9999;
-  assert.equal(draw(), 10000);
+  assert.equal(draw(), 3000);
 
   agent.STATE.settings.xAgentBeforeReplyMinSeconds = 9;
   agent.STATE.settings.xAgentBeforeReplyMaxSeconds = 3;
@@ -62,7 +62,7 @@ test('before-reply countdown waits for resume and clears after cancellation', as
   });
   paused.xAgentPaused = true;
   assert.equal(await vm.runInContext('waitBeforeXAgentReply(() => true, true)', paused), true);
-  assert.equal(paused.performance.now(), 5400);
+  assert.equal(paused.performance.now(), 1400);
   assert.equal(paused.xAgentNextReplyMs, null);
 
   const stopped = createAgent({

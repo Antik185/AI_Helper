@@ -1572,8 +1572,8 @@ const X_AGENT_NUMBER_RULES = {
   xAgentMemoryLimit: { min: 0, max: 50, fallback: 8 },
   xAgentDelayMinSeconds: { min: 5, max: 600, fallback: 30 },
   xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 },
-  xAgentBeforeReplyMinSeconds: { min: 1, max: 600, fallback: 5 },
-  xAgentBeforeReplyMaxSeconds: { min: 1, max: 600, fallback: 10 }
+  xAgentBeforeReplyMinSeconds: { min: 1, max: 600, fallback: 1 },
+  xAgentBeforeReplyMaxSeconds: { min: 1, max: 600, fallback: 3 }
 };
 
 function scheduleXAgentSettingSave(key, value, delay = 250) {

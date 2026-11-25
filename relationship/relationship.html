@@ -19,6 +19,7 @@
       </div>
       <div class="hero-actions">
         <button id="refreshResults" type="button">Refresh data</button>
+        <button id="checkFollowBackProfiles" type="button">Check follow-backs</button>
         <button id="startSession" class="primary" type="button">Start automatic relationship session</button>
         <button id="resumeSession" type="button" hidden>Resume current session</button>
       </div>
@@ -31,6 +32,15 @@
         <p id="sessionText"></p>
       </div>
       <button id="endSession" class="danger subtle" type="button">End session</button>
+    </section>
+
+    <section id="profileScanBanner" class="session-banner profile-scan-banner" hidden>
+      <span class="status-dot"></span>
+      <div>
+        <strong>Background follow-back check</strong>
+        <p id="profileScanText"></p>
+      </div>
+      <button id="stopProfileScan" class="danger subtle" type="button">Stop check</button>
     </section>
 
     <section id="stats" class="stats"></section>
@@ -88,6 +98,10 @@
       <label class="toolbar-toggle">
         <input id="replyToFollowers" type="checkbox">
         <span>Reply to authors who follow you</span>
+      </label>
+      <label class="toolbar-toggle">
+        <input id="autoFollowAuthors" type="checkbox">
+        <span>Auto-follow tracked authors</span>
       </label>
       <div class="toolbar-spacer"></div>
       <button id="exportData" type="button">Export JSON</button>

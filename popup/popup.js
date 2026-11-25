@@ -28,6 +28,7 @@ const FIELDS = [
   'xAgentPrompt',
   'xRelationshipPrompt',
   'xRelationshipAutoLike',
+  'xRelationshipAutoFollow',
   'xRelationshipReplyToFollowers',
   'uiLang'
 ];
@@ -62,6 +63,7 @@ const DEFAULTS = {
   xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
   xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
   xRelationshipAutoLike: false,
+  xRelationshipAutoFollow: false,
   xRelationshipReplyToFollowers: false,
   uiLang: 'auto',
   theme: 'dark'
@@ -312,7 +314,7 @@ function showFeatureStates() {
     'xAgentProvider', 'xAgentAutoSubmit', 'xAgentSoundEnabled', 'xAgentNotifyEnabled',
     'xAgentOpenReport', 'xAgentRunCount', 'xAgentDelayMinSeconds',
     'xAgentDelayMaxSeconds', 'xAgentMemoryLimit', 'xAgentPrompt',
-    'xRelationshipPrompt', 'xRelationshipAutoLike',
+    'xRelationshipPrompt', 'xRelationshipAutoLike', 'xRelationshipAutoFollow',
     'xRelationshipReplyToFollowers', 'startXAgent'
   ].forEach(id => setControlDisabled(id, xAgentOff));
 }

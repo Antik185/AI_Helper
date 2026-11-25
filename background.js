@@ -31,6 +31,7 @@ const DEFAULTS = {
   xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
   xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
   xRelationshipAutoLike: false,
+  xRelationshipAutoFollow: false,
   xRelationshipReplyToFollowers: false,
   theme: 'dark'
 };
@@ -41,7 +42,7 @@ const X_AGENT_NOTIFICATION_ID = 'ai-helper-x-agent-complete';
 const X_RELATIONSHIP_AUTHORS_KEY = 'xRelationshipAuthors';
 const X_RELATIONSHIP_SESSION_KEY = 'xRelationshipSession';
 const X_RELATIONSHIP_API_CONFIG_KEY = 'xRelationshipApiConfig';
-const X_RELATIONSHIP_MAX_AUTHORS = 100;
+const X_RELATIONSHIP_MAX_AUTHORS = 250;
 const X_RELATIONSHIP_MAX_INTERACTIONS = 25;
 const X_RELATIONSHIP_REFRESH_LIMIT = 20;
 const X_RELATIONSHIP_MAX_FOLLOWER_PAGES = 1;

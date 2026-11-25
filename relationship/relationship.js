@@ -7,13 +7,25 @@ const state = {
   session: null,
   apiConfig: { ownHandle: '', hasToken: false, checkFollowBack: false },
   replyToFollowers: false,
+  autoFollowAuthors: false,
   filter: 'active',
   search: '',
-  refreshingApi: false
+  refreshingApi: false,
+  profileScan: {
+    running: false,
+    cancelled: false,
+    current: 0,
+    total: 0,
+    checked: 0,
+    followsBack: 0,
+    errors: 0,
+    message: ''
+  }
 };
 
 const requestedAuthor = new URLSearchParams(location.search).get('author') || '';
 let requestedAuthorApplied = false;
+let profileScanWindowId = null;
 
 function callRelationship(action, payload = {}) {
   return new Promise((resolve, reject) => {
@@ -178,17 +190,44 @@ function renderSession() {
   resume.textContent = `Resume @${author.handle}`;
 }
 
+function renderProfileScan() {
+  const scan = state.profileScan;
+  const banner = document.getElementById('profileScanBanner');
+  const start = document.getElementById('checkFollowBackProfiles');
+  const stop = document.getElementById('stopProfileScan');
+  banner.hidden = !scan.running && !scan.message;
+  banner.classList.toggle('is-complete', !scan.running && !!scan.message);
+  stop.hidden = !scan.running;
+  start.disabled = scan.running
+    || state.refreshingApi
+    || state.session?.active === true
+    || !state.authors.some(author => author.status !== 'archived');
+  document.getElementById('refreshResults').disabled = scan.running || state.refreshingApi;
+  document.getElementById('startSession').disabled = scan.running || !state.authors.some(item => {
+    return item.status !== 'archived' && (state.replyToFollowers || !item.followsBack);
+  });
+  start.textContent = scan.running ? `Checking ${scan.current}/${scan.total}` : 'Check follow-backs';
+  document.getElementById('profileScanText').textContent = scan.message || (
+    `Checking ${scan.current}/${scan.total} · verified ${scan.checked} · follows you ${scan.followsBack} · errors ${scan.errors}`
+  );
+}
+
 async function refresh() {
   const [response, apiResponse, settings] = await Promise.all([
     callRelationship('list'),
     callRelationship('getApiConfig'),
-    chrome.storage.sync.get({ xRelationshipReplyToFollowers: false })
+    chrome.storage.sync.get({
+      xRelationshipReplyToFollowers: false,
+      xRelationshipAutoFollow: false
+    })
   ]);
   state.authors = response.authors || [];
   state.session = response.session || null;
   state.apiConfig = apiResponse.config || state.apiConfig;
   state.replyToFollowers = settings.xRelationshipReplyToFollowers === true;
+  state.autoFollowAuthors = settings.xRelationshipAutoFollow === true;
   document.getElementById('replyToFollowers').checked = state.replyToFollowers;
+  document.getElementById('autoFollowAuthors').checked = state.autoFollowAuthors;
   if (requestedAuthor && !requestedAuthorApplied) {
     requestedAuthorApplied = true;
     state.filter = 'all';
@@ -418,6 +457,7 @@ function filteredAuthors() {
 function render() {
   renderStats();
   renderSession();
+  renderProfileScan();
   const authors = filteredAuthors();
   const root = document.getElementById('authorList');
   root.replaceChildren(...authors.map(renderAuthor));
@@ -425,6 +465,10 @@ function render() {
 }
 
 async function startSession() {
+  if (state.profileScan.running) {
+    alert('Stop the background follow-back check before starting a Relationship session.');
+    return;
+  }
   await chrome.storage.sync.set({ xAgentEnabled: true });
   const response = await callRelationship('startSession', {
     auto: true,
@@ -444,6 +488,165 @@ async function startSession() {
 async function endSession() {
   await callRelationship('endSession');
   await refresh();
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function profileHandleFromUrl(value) {
+  try {
+    return new URL(value).pathname.split('/').filter(Boolean)[0]?.toLowerCase() || '';
+  } catch {
+    return '';
+  }
+}
+
+function profileScanUrl(author) {
+  return `https://x.com/${encodeURIComponent(author.handle)}?dth_crm_scan=1`;
+}
+
+async function createProfileScanWindow(url) {
+  try {
+    return await chrome.windows.create({
+      url,
+      type: 'popup',
+      state: 'minimized',
+      focused: false
+    });
+  } catch {
+    const scanWindow = await chrome.windows.create({
+      url,
+      type: 'popup',
+      width: 420,
+      height: 640,
+      focused: false
+    });
+    try { await chrome.windows.update(scanWindow.id, { state: 'minimized' }); } catch { }
+    return scanWindow;
+  }
+}
+
+async function waitForProfileTab(tabId, handle, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  const expected = String(handle || '').toLowerCase();
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === 'complete' && profileHandleFromUrl(tab.url) === expected) return;
+    await wait(250);
+  }
+  throw new Error(`Timed out loading @${handle}.`);
+}
+
+async function inspectProfileTab(tabId, handle) {
+  let lastError = '';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'xRelationshipInspectProfile',
+        handle
+      });
+      if (response?.ok && response.ready) return response;
+      lastError = response?.error || 'Profile was not ready.';
+    } catch (error) {
+      lastError = error.message || String(error);
+    }
+    await wait(500);
+  }
+  throw new Error(lastError || `Could not inspect @${handle}.`);
+}
+
+async function stopProfileScan() {
+  state.profileScan.cancelled = true;
+  state.profileScan.message = 'Stopping background check...';
+  renderProfileScan();
+  if (profileScanWindowId !== null) {
+    try { await chrome.windows.remove(profileScanWindowId); } catch { }
+  }
+}
+
+async function checkFollowBackProfiles() {
+  if (state.profileScan.running) return;
+  if (state.session?.active) {
+    alert('End the active Relationship session before starting the background follow-back check.');
+    return;
+  }
+  const authors = state.authors.filter(author => author.status !== 'archived');
+  if (!authors.length) {
+    alert('Add at least one active author to Relationship CRM first.');
+    return;
+  }
+  state.profileScan = {
+    running: true,
+    cancelled: false,
+    current: 0,
+    total: authors.length,
+    checked: 0,
+    followsBack: 0,
+    errors: 0,
+    message: ''
+  };
+  renderProfileScan();
+  let tabId = null;
+  try {
+    const scanWindow = await createProfileScanWindow(profileScanUrl(authors[0]));
+    profileScanWindowId = scanWindow.id;
+    tabId = scanWindow.tabs?.[0]?.id || null;
+    if (!tabId) {
+      const tabs = await chrome.tabs.query({ windowId: scanWindow.id });
+      tabId = tabs[0]?.id || null;
+    }
+    if (!tabId) throw new Error('Could not create the background X tab.');
+
+    for (let index = 0; index < authors.length; index++) {
+      if (state.profileScan.cancelled) break;
+      const author = authors[index];
+      state.profileScan.current = index + 1;
+      state.profileScan.message = '';
+      renderProfileScan();
+      try {
+        if (index > 0) {
+          await chrome.tabs.update(tabId, { url: profileScanUrl(author), active: true });
+        }
+        await waitForProfileTab(tabId, author.handle);
+        const result = await inspectProfileTab(tabId, author.handle);
+        const response = await callRelationship('patchAuthor', {
+          handle: author.handle,
+          patch: {
+            displayName: result.displayName || author.displayName,
+            following: result.following,
+            followsBack: result.followsBack,
+            lastCheckedAt: new Date().toISOString()
+          }
+        });
+        state.authors = response.authors || state.authors;
+        state.session = response.session || state.session;
+        state.profileScan.checked += 1;
+        if (result.followsBack) state.profileScan.followsBack += 1;
+      } catch (error) {
+        if (!state.profileScan.cancelled) {
+          state.profileScan.errors += 1;
+          console.warn(`[DTH CRM] Could not inspect @${author.handle}:`, error);
+          if (/no tab with id|no window with id|invalid tab id/i.test(error.message || '')) {
+            state.profileScan.cancelled = true;
+          }
+        }
+      }
+      renderProfileScan();
+      if (!state.profileScan.cancelled && index + 1 < authors.length) await wait(1200);
+    }
+  } finally {
+    if (profileScanWindowId !== null) {
+      try { await chrome.windows.remove(profileScanWindowId); } catch { }
+    }
+    profileScanWindowId = null;
+    const cancelled = state.profileScan.cancelled;
+    state.profileScan.running = false;
+    state.profileScan.message = cancelled
+      ? `Check stopped · verified ${state.profileScan.checked}/${state.profileScan.total} · errors ${state.profileScan.errors}`
+      : `Check complete · verified ${state.profileScan.checked}/${state.profileScan.total} · follows you ${state.profileScan.followsBack} · errors ${state.profileScan.errors}`;
+    await refresh();
+  }
 }
 
 async function exportData() {
@@ -540,6 +743,16 @@ document.getElementById('filter').addEventListener('change', event => {
   render();
 });
 document.getElementById('startSession').addEventListener('click', () => startSession().catch(error => alert(error.message)));
+document.getElementById('checkFollowBackProfiles').addEventListener('click', () => {
+  checkFollowBackProfiles().catch(error => {
+    state.profileScan.running = false;
+    state.profileScan.message = `Background check failed: ${error.message}`;
+    renderProfileScan();
+  });
+});
+document.getElementById('stopProfileScan').addEventListener('click', () => {
+  stopProfileScan().catch(() => {});
+});
 document.getElementById('refreshResults').addEventListener('click', () => {
   refreshApiData().catch(error => setApiStatus(error.message, true));
 });
@@ -590,7 +803,7 @@ document.getElementById('importHandlesFile').addEventListener('change', async ev
       `${summary.invalid || 0} invalid lines`
     ];
     if (summary.limited) {
-      parts.push(`${summary.limited} skipped because the CRM limit is ${summary.maxAuthors || 100}`);
+      parts.push(`${summary.limited} skipped because the CRM limit is ${summary.maxAuthors || 250}`);
     }
     alert(`TXT import complete: ${parts.join(', ')}.`);
   } catch (error) {
@@ -606,6 +819,12 @@ document.getElementById('replyToFollowers').addEventListener('change', async eve
   });
   render();
 });
+document.getElementById('autoFollowAuthors').addEventListener('change', async event => {
+  state.autoFollowAuthors = event.target.checked;
+  await chrome.storage.sync.set({
+    xRelationshipAutoFollow: state.autoFollowAuthors
+  });
+});
 document.getElementById('resetData').addEventListener('click', async () => {
   if (!confirm('Delete every tracked author and all relationship history from this browser?')) return;
   await callRelationship('reset');
@@ -613,12 +832,24 @@ document.getElementById('resetData').addEventListener('click', async () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes[AUTHORS_KEY] || changes[SESSION_KEY] || changes[API_CONFIG_KEY])) refresh().catch(() => {});
+  if (area === 'local' && (changes[AUTHORS_KEY] || changes[SESSION_KEY] || changes[API_CONFIG_KEY])) {
+    if (!state.profileScan.running || changes[SESSION_KEY] || changes[API_CONFIG_KEY]) {
+      refresh().catch(() => {});
+    }
+  }
   if (area === 'sync' && changes.xRelationshipReplyToFollowers) {
     state.replyToFollowers = changes.xRelationshipReplyToFollowers.newValue === true;
     document.getElementById('replyToFollowers').checked = state.replyToFollowers;
     render();
   }
+  if (area === 'sync' && changes.xRelationshipAutoFollow) {
+    state.autoFollowAuthors = changes.xRelationshipAutoFollow.newValue === true;
+    document.getElementById('autoFollowAuthors').checked = state.autoFollowAuthors;
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (profileScanWindowId !== null) chrome.windows.remove(profileScanWindowId).catch(() => {});
 });
 
 refresh().catch(error => {

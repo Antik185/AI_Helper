@@ -211,7 +211,7 @@ vm.runInContext(fs.readFileSync('background.js', 'utf8'), context, { filename: '
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(importedHandles.importSummary)),
-    { added: 2, existing: 1, duplicates: 1, invalid: 1, limited: 0, maxAuthors: 100 }
+    { added: 2, existing: 1, duplicates: 1, invalid: 1, limited: 0, maxAuthors: 250 }
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(importedHandles.authors.slice(0, 2).map(author => author.handle))),
@@ -255,13 +255,18 @@ vm.runInContext(fs.readFileSync('background.js', 'utf8'), context, { filename: '
   assert.equal(labelContext.isFollowBack('Te sigue ·'), true);
   assert.equal(labelContext.isFollowBack('Following'), false);
   assert.match(xContentSource, /function likeXRelationshipArticle/);
+  assert.match(xContentSource, /async function followCurrentXRelationshipAuthor/);
   assert.match(xContentSource, /xRelationshipAutoLike/);
+  assert.match(xContentSource, /xRelationshipAutoFollow/);
   assert.match(xContentSource, /xRelationshipReplyToFollowers/);
   const popupHtml = fs.readFileSync('popup\/popup.html', 'utf8');
   const relationshipHtml = fs.readFileSync('relationship\/relationship.html', 'utf8');
   assert.match(popupHtml, /id="xRelationshipPrompt"/);
+  assert.match(popupHtml, /id="xRelationshipAutoFollow"/);
   assert.match(popupHtml, /id="xRelationshipReplyToFollowers"/);
   assert.match(relationshipHtml, /id="importHandlesFile"/);
+  assert.match(relationshipHtml, /id="autoFollowAuthors"/);
+  assert.match(relationshipHtml, /id="checkFollowBackProfiles"/);
   assert.match(relationshipHtml, /id="replyToFollowers"/);
 
   console.log('Relationship cost-optimized refresh regression test: OK');

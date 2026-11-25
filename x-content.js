@@ -5,15 +5,16 @@
 
 console.log('[DTH X] content script loaded on', location.href);
 
-// X использует Draft.js (не Slate, как Discord), но contenteditable и paste-event работают так же.
 const COMPOSE_SELECTORS = [
+  'form textarea[aria-multiline="true"][aria-autocomplete="list"]',
   'div[data-testid^="tweetTextarea_"][contenteditable="true"]',
   // Запасные варианты на случай редизайна:
   'div[role="textbox"][contenteditable="true"][data-testid*="tweetTextarea"]',
   'div[contenteditable="true"][data-block-editor-block-type="text"]'
 ];
 
-const TWEET_SELECTOR = 'article[data-testid="tweet"]';
+const TWEET_SELECTOR = 'article[data-testid="tweet"], article:has([data-engagement-action="reply"])';
+const X_EMBEDDED_POST_SELECTOR = '[data-slot="embedded-tweet-frame"]';
 const X_AGENT_BUTTON_CLASS = 'dth-x-agent-btn';
 const X_AGENT_CONTROL_CLASS = 'dth-x-agent-control';
 const X_AGENT_ACTIVE_CLASS = 'dth-x-agent-active';
@@ -23,10 +24,13 @@ const X_AGENT_PROCESSED_POSTS_KEY = 'xAgentProcessedPosts';
 const X_AGENT_MAX_PROCESSED_POSTS = 1000;
 const X_POST_TRANSLATE_BUTTON_CLASS = 'dth-x-post-translate-btn';
 const X_POST_TRANSLATION_CLASS = 'dth-x-post-translation';
+const X_POST_BODY_SELECTOR = '[data-testid="tweetText"], [dir="auto"].whitespace-pre-wrap';
+const X_POST_ARTICLE_TITLE_SELECTOR = 'a :is(h1, div).font-article.line-clamp-3';
 const X_RELATIONSHIP_TARGET_CLASS = 'dth-x-relationship-target';
 const X_RELATIONSHIP_ACTION_CLASS = 'dth-x-relationship-native-action';
 const X_RELATIONSHIP_AUTHORS_KEY = 'xRelationshipAuthors';
 const X_RELATIONSHIP_SESSION_KEY = 'xRelationshipSession';
+const X_RELATIONSHIP_PROFILE_SCAN_MODE = new URLSearchParams(location.search).get('dth_crm_scan') === '1';
 const X_FOLLOWS_BACK_LABELS = new Set([
   'follows you', 'читает вас', 'подписан на вас', 'подписана на вас',
   'читає вас', 'folgt dir', 'vous suit', 'te sigue', 'segue você',
@@ -142,18 +146,18 @@ function langLabel(code) {
 function findActiveCompose() {
   // Если сейчас в фокусе подходящий contenteditable — берём его.
   const ae = document.activeElement;
-  if (ae && ae.matches) {
+  if (ae?.matches && isAvailableXCompose(ae)) {
     for (const sel of COMPOSE_SELECTORS) {
       if (ae.matches(sel)) return ae;
     }
   }
   // Иначе возвращаем последний известный (если он ещё в DOM).
-  if (STATE.activeCompose && document.body.contains(STATE.activeCompose)) {
+  if (isAvailableXCompose(STATE.activeCompose)) {
     return STATE.activeCompose;
   }
   // На крайний случай — первый видимый composer на странице.
   for (const sel of COMPOSE_SELECTORS) {
-    const el = document.querySelector(sel);
+    const el = Array.from(document.querySelectorAll(sel)).find(isAvailableXCompose);
     if (el) return el;
   }
   return null;
@@ -165,29 +169,40 @@ function getFocusedXCompose() {
   return COMPOSE_SELECTORS.some(selector => active.matches(selector)) ? active : null;
 }
 
+function getXReplyRoutePostId() {
+  return location.pathname === '/compose/post'
+    ? getXPostId(new URLSearchParams(location.search).get('in_reply_to'))
+    : '';
+}
+
+function isAvailableXCompose(compose) {
+  return !!compose?.isConnected && isVisible(compose) && !compose.disabled && !compose.readOnly
+    && !compose.closest('[hidden], [inert], [aria-hidden="true"]');
+}
+
 function isReusableXReplyCompose(compose, article) {
-  if (!compose || !article || !document.body.contains(compose) || !isVisible(compose)) {
-    return false;
-  }
-  if (article.contains(compose)) return true;
-  if (compose.closest('[role="dialog"]')) return false;
+  if (!article || !isAvailableXCompose(compose)) return false;
   const articlePostId = getXPostId(getTweetUrl(article));
-  const pagePostId = getXPostId(location.href);
-  return !!articlePostId && articlePostId === pagePostId;
+  if (!articlePostId) return false;
+  const replyPostId = getXReplyRoutePostId();
+  const dialog = compose.closest('[role="dialog"]');
+  if (replyPostId) return !!dialog && replyPostId === articlePostId;
+  if (dialog) return false;
+  if (article.contains(compose)) return true;
+  return articlePostId === getXPostId(location.href) && !!findSubmitButton(compose, false);
 }
 
 function findExistingReplyComposer(article, preferredCompose = null) {
-  const candidates = [preferredCompose, getFocusedXCompose()];
-  return candidates.find((compose, index) => {
-    return compose
-      && candidates.indexOf(compose) === index
-      && isReusableXReplyCompose(compose, article);
-  }) || null;
+  return [preferredCompose, getFocusedXCompose(), ...document.querySelectorAll(COMPOSE_SELECTORS.join(','))]
+    .find(compose => isReusableXReplyCompose(compose, article)) || null;
+}
+
+function readXComposeText(el) {
+  return (el?.value ?? el?.textContent ?? '').replace(/[\u200B\uFEFF]/g, '').trim();
 }
 
 function composeHasText(el) {
-  if (!el) return false;
-  return (el.textContent || '').trim().length > 0;
+  return !!readXComposeText(el);
 }
 
 // --- Slate/Draft text replacement (same approach as Discord) ---
@@ -198,6 +213,13 @@ function nextFrame() {
 
 async function replaceComposeText(el, newText) {
   el.focus();
+  if (el.matches('textarea')) {
+    // Use the native setter so React notices the change when the input event fires.
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(el, newText);
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: newText }));
+    return;
+  }
   await nextFrame();
 
   let selected = false;
@@ -271,11 +293,11 @@ function playAgentSound(kind = 'ready') {
 }
 
 function getTweetText(article) {
-  const blocks = Array.from(article.querySelectorAll('[data-testid="tweetText"]'))
-    .filter(el => !el.closest('article[data-testid="tweet"]') || el.closest('article[data-testid="tweet"]') === article)
-    .map(el => (el.textContent || '').trim())
-    .filter(Boolean);
-  if (blocks.length) return blocks.join('\n');
+  const block = findPrimaryTweetTextBlock(article);
+  if (block) return getStructuredTweetText(block).trim();
+  const title = findXLinkedArticleTitle(article);
+  if (title) return title.textContent.trim();
+  if (article.querySelector('[data-engagement-action="reply"]')) return '';
   return (article.textContent || '').trim().slice(0, 3000);
 }
 
@@ -303,14 +325,17 @@ function getTweetAuthorMeta(article) {
     const match = new URL(statusUrl).pathname.match(/^\/([^/]+)\/status\//i);
     handle = normalizeXHandle(match?.[1]);
   } catch { }
-  const user = article.querySelector('[data-testid="User-Name"]');
-  if (!handle && user) {
-    const profileLink = Array.from(user.querySelectorAll('a[href]'))
-      .map(link => link.getAttribute('href'))
-      .find(href => /^\/[A-Za-z0-9_]{1,15}$/.test(href || ''));
-    handle = normalizeXHandle(profileLink);
+  const header = article.querySelector('[data-testid="User-Name"]');
+  const profileLink = Array.from((header || article).querySelectorAll('a[href]')).find(link => {
+    if (!isOwnXPostElement(article, link)) return false;
+    return /^\/[A-Za-z0-9_]{1,15}\/?$/.test(new URL(link.href, location.href).pathname)
+      && (header || normalizeXHandle(link.href).toLowerCase() === handle.toLowerCase())
+      && !!link.textContent.trim();
+  });
+  if (!handle && profileLink) {
+    handle = normalizeXHandle(profileLink.href);
   }
-  const text = (user?.textContent || '').trim();
+  const text = (header?.textContent || profileLink?.textContent || '').trim();
   const displayName = text
     .replace(new RegExp(`@${escapeRegExp(handle)}.*$`, 'i'), '')
     .trim();
@@ -321,11 +346,29 @@ function getTweetAuthorMeta(article) {
   };
 }
 
+function isOwnXPostElement(article, element) {
+  return element.closest('article') === article && !element.closest(X_EMBEDDED_POST_SELECTOR);
+}
+
 function getTweetUrl(article) {
-  const statusLink = Array.from(article.querySelectorAll('a[href*="/status/"]'))
-    .map(a => a.href)
-    .find(Boolean);
-  return statusLink || location.href;
+  const card = article.closest('[data-href*="/status/"]');
+  const cardPath = card?.getAttribute('data-href');
+  if (/^\/(?:[A-Za-z0-9_]{1,15}|i\/web)\/status\/\d{1,19}$/.test(cardPath || '')) {
+    return new URL(cardPath, location.href).href;
+  }
+  const linkSelector = 'a[href*="/status/"]';
+  const links = Array.from(article.querySelectorAll(linkSelector)).filter(link =>
+    isOwnXPostElement(article, link) && !link.closest('[data-testid="tweetText"], [dir="auto"].whitespace-pre-wrap')
+  );
+  const candidates = [...links.filter(link => link.querySelector('time')), ...links];
+  for (const { href: candidate } of candidates) {
+    if (!URL.canParse(candidate, location.href)) continue;
+    const url = new URL(candidate, location.href);
+    if (!/^(?:www\.)?(?:x|twitter)\.com$/i.test(url.hostname)) continue;
+    const match = url.pathname.match(/^\/(?:[A-Za-z0-9_]{1,15}|i\/web)\/status\/\d{1,19}(?=\/|$)/);
+    if (match) return url.origin + match[0];
+  }
+  return '';
 }
 
 function getXPostId(value) {
@@ -364,9 +407,20 @@ function isPromotedTweet(article) {
 }
 
 function findReplyButton(article) {
-  return article.querySelector('[data-testid="reply"]')
-    || article.querySelector('button[aria-label*="Reply" i]')
-    || article.querySelector('button[aria-label*="Ответ" i]');
+  const postId = getXPostId(getTweetUrl(article));
+  const controls = article.querySelectorAll(
+    '[data-testid="reply"], [data-engagement-action="reply"] :is(a, button, [role="button"]), a[href*="in_reply_to="]'
+  );
+  return Array.from(controls).find(control => {
+    if (!isOwnXPostElement(article, control) || !isEnabledXControl(control)) return false;
+    if (!control.matches('a[href]')) return true;
+    const url = new URL(control.href, location.href);
+    return url.origin === location.origin && url.pathname === '/compose/post'
+      && !!postId && url.searchParams.get('in_reply_to') === postId;
+  }) || Array.from(article.querySelectorAll('button[aria-label]')).find(button =>
+    isOwnXPostElement(article, button) && isEnabledXControl(button)
+    && /(?:^|[.!]\s+)(?:reply|ответить)$/iu.test(button.getAttribute('aria-label'))
+  ) || null;
 }
 
 function findTweetActionGroup(article) {
@@ -375,9 +429,70 @@ function findTweetActionGroup(article) {
   return reply.closest('[role="group"]') || reply.parentElement?.parentElement || reply.parentElement;
 }
 
+function isEnabledXControl(control) {
+  return isVisible(control) && !control.disabled
+    && control.getAttribute('aria-disabled') !== 'true' && !control.hasAttribute('data-disabled');
+}
+
+function findXPostLikeButton(article) {
+  if (!article) return null;
+  const buttons = article.querySelectorAll(
+    '[data-testid="like"], [data-testid="unlike"], [data-engagement-action="like"] :is(button, [role="button"])'
+  );
+  return Array.from(buttons).find(button => isOwnXPostElement(article, button) && isVisible(button)) || null;
+}
+
+function getXPostLiked(button) {
+  if (!button) return null;
+  const pressed = button.getAttribute('aria-pressed');
+  if (pressed === 'true' || pressed === 'false') return pressed === 'true';
+  if (button.dataset.testid === 'unlike') return true;
+  if (button.dataset.testid === 'like') return false;
+  return null;
+}
+
 function findPrimaryTweetTextBlock(article) {
-  return Array.from(article.querySelectorAll('[data-testid="tweetText"]'))
-    .find(block => block.closest(TWEET_SELECTOR) === article) || null;
+  return Array.from(article.querySelectorAll(X_POST_BODY_SELECTOR)).find(block =>
+    isOwnXPostElement(article, block)
+    && !block.classList.contains(X_POST_TRANSLATION_CLASS)
+    && !block.closest('form')
+    && !block.matches('[aria-hidden="true"]')
+  ) || null;
+}
+
+function findXLinkedArticleTitle(article) {
+  return Array.from(article.querySelectorAll(X_POST_ARTICLE_TITLE_SELECTOR)).find(title =>
+    isOwnXPostElement(article, title) && !title.classList.contains(X_POST_TRANSLATION_CLASS)
+  ) || null;
+}
+
+function findXPostTranslationSource(article) {
+  return findPrimaryTweetTextBlock(article) || findXLinkedArticleTitle(article);
+}
+
+function placeXPostTranslateButton(article, button) {
+  const handle = getTweetAuthorMeta(article).handle.toLowerCase();
+  const handleText = '@' + handle;
+  const link = handle && Array.from(article.querySelectorAll('a[href]')).find(anchor =>
+    isOwnXPostElement(article, anchor)
+    && anchor.textContent.trim().toLowerCase() === handleText
+    && normalizeXHandle(anchor.href).toLowerCase() === handle
+    && !anchor.closest(X_POST_BODY_SELECTOR + ', form')
+  );
+  if (link) {
+    link.insertAdjacentElement('afterend', button);
+    return true;
+  }
+
+  const header = Array.from(article.querySelectorAll('[data-testid="User-Name"], .x-middot-group'))
+    .find(node => isOwnXPostElement(article, node));
+  if (!header) return false;
+  const marker = handle && Array.from(header.querySelectorAll('span')).find(span =>
+    span.textContent.trim().toLowerCase() === handleText
+  );
+  if (marker) (marker.closest('a') || marker).insertAdjacentElement('afterend', button);
+  else (header.firstElementChild || header).append(button);
+  return true;
 }
 
 function getStructuredTweetText(block) {
@@ -540,7 +655,7 @@ function renderXPostTranslation(container, text, inlineLinks) {
 }
 
 function getXPostKey(article) {
-  const text = getStructuredTweetText(findPrimaryTweetTextBlock(article));
+  const text = getStructuredTweetText(findXPostTranslationSource(article));
   let hash = 2166136261;
   for (let index = 0; index < text.length; index++) {
     hash ^= text.charCodeAt(index);
@@ -595,7 +710,8 @@ function clearXPostTranslateButtons() {
 function cleanupStaleXPostTranslationUi() {
   document.querySelectorAll(`.${X_POST_TRANSLATION_CLASS}`).forEach(element => {
     const original = element.previousElementSibling;
-    if (original?.matches('[data-testid="tweetText"]') && original.style.display === 'none') {
+    if (original?.matches(X_POST_BODY_SELECTOR + ', ' + X_POST_ARTICLE_TITLE_SELECTOR)
+      && original.style.display === 'none') {
       original.style.removeProperty('display');
     }
     element.remove();
@@ -615,7 +731,7 @@ async function toggleXPostTranslation(article, button) {
     return;
   }
 
-  const originalBlock = findPrimaryTweetTextBlock(article);
+  const originalBlock = findXPostTranslationSource(article);
   const originalText = getStructuredTweetText(originalBlock);
   if (!originalBlock || !originalText.trim()) return;
 
@@ -644,7 +760,8 @@ async function toggleXPostTranslation(article, button) {
     translatedBlock.classList.add(X_POST_TRANSLATION_CLASS);
     translatedBlock.setAttribute('lang', targetLang);
     translatedBlock.setAttribute('dir', 'auto');
-    renderXPostTranslation(translatedBlock, translatedText, inlineLinks);
+    if (originalBlock.closest('a[href]')) translatedBlock.textContent = translatedText;
+    else renderXPostTranslation(translatedBlock, translatedText, inlineLinks);
 
     state.originalBlock = originalBlock;
     state.originalDisplay = originalBlock.style.display;
@@ -703,10 +820,8 @@ function ensureXPostTranslateButtons() {
     if (rect.bottom < -500 || rect.top > window.innerHeight + 1200) continue;
     if (isPromotedTweet(article)) continue;
 
-    const textBlock = findPrimaryTweetTextBlock(article);
-    const userName = article.querySelector('[data-testid="User-Name"]');
-    const nameHost = userName?.firstElementChild || userName;
-    if (!textBlock || !nameHost) continue;
+    const textBlock = findXPostTranslationSource(article);
+    if (!textBlock) continue;
 
     const key = getXPostKey(article);
     let button = article.querySelector(`.${X_POST_TRANSLATE_BUTTON_CLASS}`);
@@ -720,12 +835,14 @@ function ensureXPostTranslateButtons() {
     }
     if (button) {
       const current = xPostTranslationStates.get(article);
-      setXPostTranslateButtonState(button, current?.translated ? 'translated' : 'idle');
+      if (button.dataset.state === 'idle' || current?.translated) {
+        setXPostTranslateButtonState(button, current?.translated ? 'translated' : 'idle');
+      }
       continue;
     }
 
     button = createXPostTranslateButton(article, key);
-    nameHost.append(button);
+    if (!placeXPostTranslateButton(article, button)) continue;
     const current = xPostTranslationStates.get(article);
     if (current) current.button = button;
     added++;
@@ -760,35 +877,48 @@ function getRandomAgentDelayMs() {
   return (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
 }
 
-function findSubmitButton(root) {
-  const scope = root || document;
-  return Array.from(scope.querySelectorAll('[data-testid="tweetButton"], [data-testid="tweetButtonInline"], button[type="submit"]'))
-    .find(btn => isVisible(btn) && btn.getAttribute('aria-disabled') !== 'true' && !btn.disabled);
+function findSubmitButton(compose, requireEnabled = true) {
+  const form = compose?.closest('form');
+  const dialog = compose?.closest('[role="dialog"]');
+  const root = form || dialog;
+  const legacy = '[data-testid="tweetButton"], [data-testid="tweetButtonInline"]';
+  for (let scope = root || compose?.parentElement; scope && scope !== document.body; scope = scope.parentElement) {
+    const selector = form ? legacy + ', button[data-slot="xds-button"], button[type="submit"]' : legacy;
+    const button = Array.from(scope.querySelectorAll(selector)).find(btn => {
+      if (form && btn.closest('form') !== form) return false;
+      return (btn.matches(legacy) || /^(reply|ответить|відповісти|répondre|responder|antworten|rispondi|yanıtla|odpowiedz|返信|回复|回覆|رد|답글)$/iu.test(btn.textContent.trim()))
+        && (requireEnabled ? isEnabledXControl(btn) : isVisible(btn));
+    });
+    if (button) return button;
+    if (root || scope.querySelectorAll(COMPOSE_SELECTORS.join(',')).length > 1) break;
+  }
+  return null;
 }
 
-async function waitForSubmitButton(root) {
+async function waitForSubmitButton(compose) {
   for (let i = 0; i < 20; i++) {
-    const btn = findSubmitButton(root);
+    if (!isAvailableXCompose(compose)) return null;
+    const btn = findSubmitButton(compose);
     if (btn) return btn;
     await sleep(120);
   }
   return null;
 }
 
-async function waitForReplyCompose(beforeSet) {
+async function waitForReplyCompose(article, beforeSet) {
   for (let i = 0; i < 50; i++) {
-    const dialog = document.querySelector('[role="dialog"]');
-    const candidates = Array.from(document.querySelectorAll(COMPOSE_SELECTORS.join(',')))
-      .filter(isVisible);
-    const fresh = candidates.find(el => !beforeSet || !beforeSet.has(el));
-    if (fresh) return fresh;
-    if (dialog) {
-      const inDialog = candidates.find(el => dialog.contains(el));
-      if (inDialog) return inDialog;
+    const existing = findExistingReplyComposer(article);
+    if (existing) return existing;
+    // The old X client opens its Reply dialog without changing the route.
+    if (!getXReplyRoutePostId()) {
+      const dialogs = Array.from(document.querySelectorAll(COMPOSE_SELECTORS.join(','))).filter(el =>
+        !beforeSet.has(el) && isAvailableXCompose(el) && el.closest('[role="dialog"]')
+        && !el.matches('textarea') && findSubmitButton(el, false));
+      if (dialogs.length === 1) return dialogs[0];
     }
     await sleep(120);
   }
-  return findActiveCompose();
+  return null;
 }
 
 // --- Floating button UI ---
@@ -928,13 +1058,17 @@ function trackedXAuthor(handle) {
 }
 
 function currentXProfileHandle() {
-  const first = normalizeXHandle(location.pathname.split('/').filter(Boolean)[0]);
+  const first = location.pathname.match(/^\/([A-Za-z0-9_]{1,15})\/?$/)?.[1] || '';
   if (!first) return '';
   const reserved = new Set([
     'home', 'explore', 'notifications', 'messages', 'i', 'search', 'compose',
     'settings', 'bookmarks', 'communities', 'jobs', 'premium', 'tos', 'privacy'
   ]);
   return reserved.has(first.toLowerCase()) ? '' : first;
+}
+
+function isXRelationshipProfileScanPage() {
+  return X_RELATIONSHIP_PROFILE_SCAN_MODE;
 }
 
 function currentXRelationshipAuthor() {
@@ -951,19 +1085,60 @@ function getXRelationshipProgressText() {
   return `${session.index + 1}/${session.queue.length} · @${author.handle}${author.followsBack ? ' · Follows you ✓' : ''}`;
 }
 
-function findXProfileFollowButton() {
-  return Array.from(document.querySelectorAll(
-    'main button[data-testid$="-follow"], main button[data-testid$="-unfollow"]'
-  )).find(button => {
-    return isVisible(button)
-      && !button.closest('article')
-      && !button.closest('[data-testid="UserCell"]');
-  }) || null;
+function findXProfileIdentity(handle = currentXProfileHandle()) {
+  if (!handle || currentXProfileHandle().toLowerCase() !== handle.toLowerCase()) return null;
+  const main = document.querySelector('main');
+  const legacy = main?.querySelector('[data-testid="UserName"]');
+  if (legacy) return legacy;
+  const heading = main?.querySelector('h1[dir="auto"]');
+  const marker = '@' + handle.toLowerCase();
+  for (let scope = heading?.parentElement; scope && scope !== main; scope = scope.parentElement) {
+    if (Array.from(scope.querySelectorAll('span')).some(span =>
+      span.textContent.trim().toLowerCase() === marker && !span.closest('article, [role="link"][data-href]')
+    )) return scope;
+  }
+  return null;
+}
+
+function getXProfileFollowState(button, handle) {
+  const id = (button?.dataset.testid || '').toLowerCase();
+  if (id.endsWith('-unfollow')) return 'following';
+  if (id.endsWith('-cancelfollowrequest')) return 'requested';
+  if (id.endsWith('-follow')) return 'follow';
+  const label = (button?.getAttribute('aria-label') || '').trim().toLowerCase();
+  const match = label.match(/^(.*?)\s+@([a-z0-9_]{1,15})$/);
+  if (!match || match[2] !== handle.toLowerCase()) return '';
+  if (/^(?:unfollow|stop following|following|перестать читать|прекратить читать|отписаться от|читаю|вы читаете)$/.test(match[1])) return 'following';
+  if (/^(?:cancel follow request(?: to)?|отменить запрос(?: на подписку)?(?: к)?)$/.test(match[1])) return 'requested';
+  if (/^(?:follow|начать читать|читать|подписаться на)$/.test(match[1])) return 'follow';
+  const text = normalizeXProfileLabel(button.textContent);
+  if (/^(?:following|unfollow|читаю|отписаться)$/.test(text)) return 'following';
+  if (/^(?:pending|requested|запрос отправлен)$/.test(text)) return 'requested';
+  return '';
+}
+
+function findXProfileFollowButton(handle = currentXProfileHandle()) {
+  if (!findXProfileIdentity(handle)) return null;
+  const buttons = document.querySelectorAll(
+    'main button[data-testid$="-follow"], main button[data-testid$="-unfollow"], ' +
+    'main button[data-testid$="-cancelFollowRequest" i], main button[aria-label*="@"]'
+  );
+  return Array.from(buttons).find(button =>
+    isVisible(button) && !button.closest('article, [data-testid="UserCell"], [role="link"][data-href], [role="dialog"]')
+    && getXProfileFollowState(button, handle)
+  ) || null;
+}
+
+function readXProfileFollowing(handle) {
+  const state = getXProfileFollowState(findXProfileFollowButton(handle), handle);
+  return state ? state === 'following' : null;
 }
 
 function getCurrentXProfileDisplayName(handle) {
-  const root = document.querySelector('main [data-testid="UserName"]');
+  const root = findXProfileIdentity(handle);
   if (!root) return '';
+  const heading = root.querySelector('h1');
+  if (heading) return heading.textContent.trim().slice(0, 160);
   const text = (root.textContent || '').trim();
   const marker = `@${handle}`.toLowerCase();
   const index = text.toLowerCase().indexOf(marker);
@@ -983,8 +1158,8 @@ function isXFollowsBackLabel(value) {
   return X_FOLLOWS_BACK_LABELS.has(normalizeXProfileLabel(value));
 }
 
-function detectXFollowsBack() {
-  const identity = document.querySelector('main [data-testid="UserName"]');
+function detectXFollowsBack(handle = currentXProfileHandle()) {
+  const identity = findXProfileIdentity(handle);
   if (!identity) return false;
   const scope = identity.parentElement || identity;
   const candidates = [identity, ...scope.querySelectorAll('span, [aria-label], [title]')];
@@ -1020,7 +1195,7 @@ function isXArticleAlreadyHandled(article, author = null, handledPostIds = null)
   if (postId && xAgentProcessedPosts.has(postId)) return true;
   const relationshipIds = handledPostIds || (author ? getXRelationshipHandledPostIds(author) : null);
   if (postId && relationshipIds?.has(postId)) return true;
-  if (article.querySelector('[data-testid="unlike"]')) return true;
+  if (getXPostLiked(findXPostLikeButton(article)) === true) return true;
   return hasVisibleXUserReplyMarker(article);
 }
 
@@ -1037,9 +1212,11 @@ function getXRelationshipTargetArticle(author = currentXRelationshipAuthor()) {
   const candidates = Array.from(document.querySelectorAll(TWEET_SELECTOR))
     .filter(article => getTweetAuthorMeta(article).handle.toLowerCase() === author.id)
     .filter(article => !!getTweetText(article) && !isPromotedTweet(article))
+    .filter(article => !!getXPostId(getTweetUrl(article)) && !!findReplyButton(article))
     .filter(article => !isXArticleAlreadyHandled(article, author, handledPostIds));
   const unpinned = candidates.find(article => {
-    const context = article.querySelector('[data-testid="socialContext"]')?.textContent || '';
+    const context = article.querySelector('[data-testid="socialContext"]')?.textContent
+      || article.firstElementChild?.textContent?.slice(0, 100) || '';
     return !/pinned|закреп|закріп|épingl|angeheftet|fijad|fixad|sabit|przypię|固定|置顶|مثبت/i.test(context);
   });
   return unpinned || candidates[0] || null;
@@ -1062,13 +1239,13 @@ function updateXRelationshipHighlights() {
     : getXRelationshipTargetArticle(author);
   if (target) {
     target.classList.add(X_RELATIONSHIP_TARGET_CLASS);
-    const like = target.querySelector('[data-testid="like"], [data-testid="unlike"]');
+    const like = findXPostLikeButton(target);
     if (like) like.classList.add(X_RELATIONSHIP_ACTION_CLASS);
   }
   const follow = findXProfileFollowButton();
   if (follow) follow.classList.add(X_RELATIONSHIP_ACTION_CLASS);
-  if (pending) {
-    const submit = findSubmitButton(document.querySelector('[role="dialog"]') || document);
+  if (pending && xRelationshipPendingCompose?.isConnected) {
+    const submit = findSubmitButton(xRelationshipPendingCompose);
     if (submit) submit.classList.add(X_RELATIONSHIP_ACTION_CLASS);
   }
 }
@@ -1085,27 +1262,41 @@ async function findNextXRelationshipTarget(author) {
 
 async function likeXRelationshipArticle(article) {
   const postId = getXPostId(getTweetUrl(article));
+  if (!postId) return false;
   const findArticle = () => {
-    if (article?.isConnected) return article;
-    if (!postId) return null;
+    if (article.isConnected && getXPostId(getTweetUrl(article)) === postId) return article;
     return Array.from(document.querySelectorAll(TWEET_SELECTOR))
       .find(candidate => getXPostId(getTweetUrl(candidate)) === postId) || null;
   };
-  let currentArticle = findArticle();
-  if (!currentArticle) return false;
-  if (currentArticle.querySelector('[data-testid="unlike"]')) return true;
-  const likeButton = currentArticle.querySelector('[data-testid="like"]');
-  if (!likeButton) return false;
+  const likeButton = findXPostLikeButton(findArticle());
+  const liked = getXPostLiked(likeButton);
+  if (liked === true) return true;
+  if (liked !== false || !isEnabledXControl(likeButton)) return false;
   likeButton.click();
   for (let attempt = 0; attempt < 20; attempt++) {
     await sleep(150);
-    currentArticle = findArticle();
-    if (currentArticle?.querySelector('[data-testid="unlike"]')) return true;
+    if (getXPostLiked(findXPostLikeButton(findArticle())) === true) return true;
   }
   return false;
 }
 
+async function followCurrentXRelationshipAuthor(handle) {
+  const followButton = findXProfileFollowButton(handle);
+  const state = getXProfileFollowState(followButton, handle);
+  if (state === 'following' || state === 'requested') return state;
+  if (state !== 'follow' || !isEnabledXControl(followButton)) return '';
+  followButton.click();
+  for (let attempt = 0; attempt < 30; attempt++) {
+    await sleep(180);
+    if (currentXProfileHandle().toLowerCase() !== handle.toLowerCase()) break;
+    const confirmed = getXProfileFollowState(findXProfileFollowButton(handle), handle);
+    if (confirmed === 'following' || confirmed === 'requested') return confirmed;
+  }
+  return '';
+}
+
 function scheduleXRelationshipScan(delay = 500) {
+  if (isXRelationshipProfileScanPage()) return;
   if (xRelationshipScanTimer) return;
   xRelationshipScanTimer = setTimeout(() => {
     xRelationshipScanTimer = null;
@@ -1127,17 +1318,11 @@ async function refreshCurrentXRelationshipProfile(force = false) {
   if (!author) return;
   const now = Date.now();
   if (!force && now - xRelationshipProfileCheckedAt < 30000) return;
-  const follow = findXProfileFollowButton();
-  const following = follow
-    ? String(follow.dataset.testid || '').endsWith('-unfollow')
-    : author.following;
-  const profileReady = !!follow || !!document.querySelector('main [data-testid="UserName"]');
-  if (!profileReady) return;
+  if (!findXProfileIdentity(handle)) return;
+  const following = readXProfileFollowing(handle) ?? author.following;
   // Follow-back is treated as achieved once observed. A temporarily incomplete
   // profile render must not downgrade the saved success state.
-  const followsBack = profileReady
-    ? detectXFollowsBack() || author.followsBack === true
-    : author.followsBack === true;
+  const followsBack = detectXFollowsBack(handle) || author.followsBack === true;
   const changed = following !== author.following || followsBack !== author.followsBack;
   const lastChecked = Date.parse(author.lastCheckedAt || '') || 0;
   const checkDue = now - lastChecked > 5 * 60 * 1000;
@@ -1153,6 +1338,31 @@ async function refreshCurrentXRelationshipProfile(force = false) {
     }
   });
   await refreshXRelationshipState();
+}
+
+async function inspectCurrentXProfileForCrm(expectedHandle) {
+  const expected = normalizeXHandle(expectedHandle);
+  if (!expected) return { ready: false, error: 'Invalid X handle.' };
+  let profileSeenAt = 0;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const following = readXProfileFollowing(expected);
+    if (following !== null) {
+      if (!profileSeenAt) profileSeenAt = Date.now();
+      if (Date.now() - profileSeenAt >= 500) {
+        return {
+          ready: true,
+          handle: expected,
+          displayName: getCurrentXProfileDisplayName(expected),
+          following,
+          followsBack: detectXFollowsBack(expected)
+        };
+      }
+    } else {
+      profileSeenAt = 0;
+    }
+    await sleep(200);
+  }
+  return { ready: false, error: `Profile @${expected} did not finish loading.` };
 }
 
 async function trackXAuthor(meta) {
@@ -1604,6 +1814,7 @@ function createXAgentSettingsSection() {
       'Tone, language, length, emojis, and what to avoid.'
     ),
     createXAgentToggleSetting('xRelationshipAutoLike', 'Auto-like in Relationship Mode'),
+    createXAgentToggleSetting('xRelationshipAutoFollow', 'Auto-follow in Relationship Mode'),
     createXAgentToggleSetting('xRelationshipReplyToFollowers', 'Reply to authors who follow you'),
     createXAgentSettingField(
       'Relationship Mode prompt',
@@ -1733,7 +1944,7 @@ function positionButton() {
     updateDropdownDirection();
     return;
   }
-  const send = el.closest('form')?.querySelector('[data-testid="tweetButtonInline"], [data-testid="tweetButton"], button[type="submit"]');
+  const send = findSubmitButton(el, false);
   const anchor = send && send.getBoundingClientRect().width ? send.getBoundingClientRect() : rect;
   const btnW = inputWrap.offsetWidth || 92;
   inputWrap.style.left = `${Math.max(6, Math.min(window.innerWidth - btnW - 6, anchor.right - btnW))}px`;
@@ -1754,7 +1965,7 @@ function refreshButtonLabel() {
 async function runTranslate(overrideTargetLang) {
   const el = findActiveCompose();
   if (!el || !inputMainBtn) return;
-  const text = (el.textContent || '').trim();
+  const text = readXComposeText(el);
   if (!text) return;
   inputMainBtn.disabled = true;
   inputMainBtn.dataset.loading = '1';
@@ -1931,33 +2142,49 @@ async function openReplyComposer(article, preferredCompose = null) {
   const replyBtn = findReplyButton(article);
   if (!replyBtn) throw new Error('Reply button not found.');
   replyBtn.click();
-  const compose = await waitForReplyCompose(before);
+  const compose = await waitForReplyCompose(article, before);
   if (!compose) throw new Error('Reply composer not found.');
   STATE.activeCompose = compose;
   return compose;
 }
 
-async function maybeSubmitReply(compose, forceDraft = false, forceSubmit = false) {
+async function maybeSubmitReply(compose, expectedText, forceDraft = false, forceSubmit = false) {
   if (forceDraft) return false;
   if (!forceSubmit && (!STATE.settings || STATE.settings.xAgentAutoSubmit !== true)) return false;
   if (forceSubmit && xRelationshipAutomationStopRequested) return false;
   if (xAgentRunning) await waitWhileXAgentPaused();
   if (xAgentRunning && xAgentStopRequested) return false;
-  await sleep(350);
-  const root = compose.closest('[role="dialog"]') || compose.closest('form') || document;
-  const submit = await waitForSubmitButton(root);
+  const submit = await waitForSubmitButton(compose);
   if (!submit) throw new Error('Submit button not found.');
+  if ((forceSubmit && xRelationshipAutomationStopRequested) || (xAgentRunning && xAgentStopRequested)) return false;
+  if (readXComposeText(compose) !== expectedText) {
+    throw new Error('The reply text changed before sending. Review the draft in X.');
+  }
+  const feedback = getXReplySubmissionFeedback();
   submit.click();
-  return true;
+  return feedback;
 }
 
-async function waitForXReplySubmission(compose, attempts = 30) {
-  for (let attempt = 0; attempt < attempts; attempt++) {
+const X_SUBMISSION_ERROR_SELECTOR = '[data-sonner-toast][data-type="error"], [data-testid="toast"][data-type="error"]';
+
+function getXReplySubmissionFeedback() {
+  return {
+    replyPostId: getXReplyRoutePostId(),
+    previousErrors: new Set(document.querySelectorAll(X_SUBMISSION_ERROR_SELECTOR))
+  };
+}
+
+async function waitForXReplySubmission(compose, { replyPostId, previousErrors }) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     await sleep(200);
-    const remaining = (compose?.textContent || '')
-      .replace(/[\u200B\u200C\u200D]/g, '')
-      .trim();
-    if (!compose?.isConnected || !isVisible(compose) || !remaining) return true;
+    if (Array.from(document.querySelectorAll(X_SUBMISSION_ERROR_SELECTOR)).some(toast => !previousErrors.has(toast))) {
+      return false;
+    }
+    if (replyPostId) {
+      if (!getXReplyRoutePostId() && !isAvailableXCompose(compose)) return true;
+    } else if (!compose.isConnected || !readXComposeText(compose)) {
+      return true;
+    }
   }
   return false;
 }
@@ -1983,6 +2210,8 @@ async function runXAgentReply(article, btn, options = {}) {
   const recordRelationship = !!relationshipAuthor && options.recordRelationship !== false;
   const preferredCompose = findExistingReplyComposer(article);
   try {
+    const postId = getXPostId(payload.url);
+    if (!postId) throw new Error('Could not identify the X post to reply to.');
     if (!payload.text) throw new Error('Tweet text not found.');
     const resp = await callBackground({
       type: 'xAgentReply',
@@ -1992,8 +2221,15 @@ async function runXAgentReply(article, btn, options = {}) {
     const reply = String(resp.reply || '').trim();
     if (!reply) throw new Error('Empty AI reply.');
 
-    const compose = await openReplyComposer(article, preferredCompose);
+    const target = article.isConnected && getXPostId(getTweetUrl(article)) === postId
+      ? article
+      : Array.from(document.querySelectorAll(TWEET_SELECTOR)).find(item => getXPostId(getTweetUrl(item)) === postId);
+    if (!target) throw new Error('The post is no longer visible. Open it and try again.');
+    const compose = await openReplyComposer(target, preferredCompose);
     await replaceComposeText(compose, reply);
+    if (readXComposeText(compose) !== reply) {
+      throw new Error('X did not accept the reply text. Nothing was submitted.');
+    }
     let relationshipInteractionId = '';
     if (recordRelationship) {
       relationshipInteractionId = crypto.randomUUID();
@@ -2015,14 +2251,16 @@ async function runXAgentReply(article, btn, options = {}) {
       xRelationshipPendingCompose = compose;
       await refreshXRelationshipState();
     }
-    const sent = await maybeSubmitReply(
+    const submission = await maybeSubmitReply(
       compose,
+      reply,
       options.forceDraft === true,
       options.forceSubmit === true
     );
-    if (sent && !await waitForXReplySubmission(compose)) {
+    if (submission && !await waitForXReplySubmission(compose, submission)) {
       throw new Error('X did not confirm the reply submission. The CRM draft was kept for review.');
     }
+    const sent = !!submission;
     if (sent && relationshipInteractionId) {
       try {
         await markCurrentXRelationshipReplySent(reply, await waitForPostedXRelationshipReply(reply));
@@ -2030,7 +2268,9 @@ async function runXAgentReply(article, btn, options = {}) {
         console.warn('[DTH Relationship] Reply was sent but CRM status could not be updated:', error);
       }
     }
-    article.setAttribute(X_AGENT_PROCESSED_ATTR, sent ? 'sent' : 'draft');
+    if (getXPostId(getTweetUrl(target)) === postId) {
+      target.setAttribute(X_AGENT_PROCESSED_ATTR, sent ? 'sent' : 'draft');
+    }
     await rememberXAgentProcessedPost(payload, sent ? 'sent' : 'draft').catch(error => {
       console.debug('[DTH X Agent] could not persist processed post', error);
     });
@@ -2117,6 +2357,7 @@ function getXRelationshipAutomationStep(author = currentXRelationshipAuthor()) {
 }
 
 function scheduleXRelationshipAutomation(delay = 800) {
+  if (isXRelationshipProfileScanPage() || STATE.settings?.xAgentEnabled !== true) return;
   const session = xRelationshipState.session;
   const author = currentXRelationshipAuthor();
   const step = getXRelationshipAutomationStep(author);
@@ -2155,6 +2396,7 @@ async function waitForXRelationshipDelay(ms, expectedStep) {
 }
 
 async function runXRelationshipAutomation() {
+  if (isXRelationshipProfileScanPage() || STATE.settings?.xAgentEnabled !== true) return;
   if (xRelationshipAutomationRunning || xRelationshipAutomationStopRequested) return;
   xRelationshipAutomationRunning = true;
   let scheduleAgain = false;
@@ -2171,7 +2413,7 @@ async function runXRelationshipAutomation() {
       navigateToCurrentXRelationshipAuthor();
       return;
     }
-    if (!document.querySelector('main [data-testid="UserName"]')) {
+    if (!findXProfileIdentity(author.handle)) {
       scheduleAgain = true;
       return;
     }
@@ -2183,6 +2425,31 @@ async function runXRelationshipAutomation() {
     author = currentXRelationshipAuthor();
     session = xRelationshipState.session;
     if (!session?.active || session.auto !== true || !author || author.id !== initialAuthorId) {
+      return;
+    }
+
+    if (xRelationshipAutomationStopRequested || getXRelationshipAutomationStep(author) !== initialStep) return;
+    if (STATE.settings?.xRelationshipAutoFollow === true) {
+      updateXAgentPanel(`Relationship · following @${author.handle}`);
+      const followState = await followCurrentXRelationshipAuthor(author.handle);
+      if (followState === 'following' && author.following !== true) {
+        await xRelationshipCommand('patchAuthor', {
+          handle: author.handle,
+          patch: {
+            following: true,
+            lastCheckedAt: new Date().toISOString()
+          }
+        });
+        await refreshXRelationshipState(false);
+        author = currentXRelationshipAuthor();
+      } else if (!followState) {
+        showXRelationshipToast(`Could not confirm Follow for @${author.handle} · continuing`, true);
+      }
+    }
+
+    session = xRelationshipState.session;
+    if (xRelationshipAutomationStopRequested || getXRelationshipAutomationStep(author) !== initialStep
+      || !session?.active || session.auto !== true || !author || author.id !== initialAuthorId) {
       return;
     }
 
@@ -2318,17 +2585,9 @@ async function completeCurrentXRelationshipAuthor(expectedAuthorId = '') {
   const target = pending
     ? findXRelationshipInteractionArticle(pending.interaction)
     : getXRelationshipTargetArticle(author);
-  const likedOriginal = target
-    ? !!target.querySelector('[data-testid="unlike"]')
-    : null;
-  const followButton = findXProfileFollowButton();
-  const following = followButton
-    ? String(followButton.dataset.testid || '').endsWith('-unfollow')
-    : author.following;
-  const profileReady = !!followButton || !!document.querySelector('main [data-testid="UserName"]');
-  const followsBack = profileReady
-    ? detectXFollowsBack() || author.followsBack === true
-    : author.followsBack === true;
+  const likedOriginal = getXPostLiked(findXPostLikeButton(target));
+  const following = readXProfileFollowing(author.handle) ?? author.following;
+  const followsBack = detectXFollowsBack(author.handle) || author.followsBack === true;
   const now = new Date().toISOString();
 
   if (pending) {
@@ -3047,6 +3306,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === 'xRelationshipInspectProfile') {
+    inspectCurrentXProfileForCrm(msg.handle)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
   if (msg && msg.type === 'xAgentStart') {
     loadSettings().then(() => {
       ensureXAgentPanel();
@@ -3074,21 +3339,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-function getPendingXRelationshipComposeText(root) {
+function getPendingXRelationshipCompose(root) {
   const pending = currentXRelationshipPending();
-  if (!pending) return '';
-  const scope = root || document;
-  const candidates = Array.from(scope.querySelectorAll(COMPOSE_SELECTORS.join(','))).filter(isVisible);
-  let compose = xRelationshipPendingCompose;
-  if (!compose?.isConnected || !scope.contains(compose)) compose = null;
-  if (!compose) {
-    const expected = String(pending.interaction.replyText || '').replace(/[\u200B\u200C\u200D]/g, '').replace(/\s+/g, ' ').trim();
-    compose = candidates.find(candidate => {
-      const actual = (candidate.textContent || '').replace(/[\u200B\u200C\u200D]/g, '').replace(/\s+/g, ' ').trim();
-      return !!actual && actual === expected;
-    });
-  }
-  return (compose?.textContent || '').replace(/[\u200B\u200C\u200D]/g, '').trim();
+  if (!pending || !root) return null;
+  const preferred = xRelationshipPendingCompose;
+  if (root.contains(preferred) && isAvailableXCompose(preferred)) return preferred;
+  const source = findXRelationshipInteractionArticle(pending.interaction);
+  const expected = String(pending.interaction.replyText || '').trim();
+  return Array.from(root.querySelectorAll(COMPOSE_SELECTORS.join(','))).find(compose =>
+    isReusableXReplyCompose(compose, source) && readXComposeText(compose) === expected
+  ) || null;
 }
 
 function findPostedXRelationshipReply(replyText) {
@@ -3108,7 +3368,8 @@ function findPostedXRelationshipReply(replyText) {
     if (match) return { postId: match[1], url };
   }
   const toastLink = document.querySelector(
-    '[data-testid="toast"] a[href*="/status/"], [role="alert"] a[href*="/status/"]'
+    '[data-testid="toast"] a[href*="/status/"], [role="alert"] a[href*="/status/"], ' +
+    '[data-sonner-toast]:not([data-type="error"]) a[href*="/status/"]'
   );
   if (toastLink) {
     const url = new URL(toastLink.href, location.href).href;
@@ -3127,28 +3388,21 @@ async function waitForPostedXRelationshipReply(replyText, attempts = 10) {
   return null;
 }
 
-async function confirmNativeXRelationshipSubmission(replyText) {
-  const compose = xRelationshipPendingCompose;
-  for (let attempt = 0; attempt < 20; attempt++) {
-    await sleep(200);
-    const remaining = (compose?.textContent || '').replace(/[\u200B\u200C\u200D]/g, '').trim();
-    if (!compose?.isConnected || !isVisible(compose) || !remaining) {
-      await markCurrentXRelationshipReplySent(replyText, await waitForPostedXRelationshipReply(replyText));
-      return;
-    }
+async function confirmNativeXRelationshipSubmission(compose) {
+  const replyText = readXComposeText(compose);
+  if (replyText && await waitForXReplySubmission(compose, getXReplySubmissionFeedback())) {
+    await markCurrentXRelationshipReplySent(replyText, await waitForPostedXRelationshipReply(replyText));
   }
-  console.debug('[DTH Relationship] X kept the composer open; reply was not marked as sent.');
 }
 
 document.addEventListener('click', event => {
-  const submit = event.target?.closest?.(
-    '[data-testid="tweetButton"], [data-testid="tweetButtonInline"], button[type="submit"]'
-  );
+  if (!event.isTrusted) return;
+  const submit = event.target?.closest?.('button, [role="button"]');
   if (!submit) return;
   const root = submit.closest('[role="dialog"]') || submit.closest('form') || document;
-  const replyText = getPendingXRelationshipComposeText(root);
-  if (!replyText) return;
-  confirmNativeXRelationshipSubmission(replyText).catch(error => {
+  const compose = getPendingXRelationshipCompose(root);
+  if (!compose || findSubmitButton(compose) !== submit) return;
+  confirmNativeXRelationshipSubmission(compose).catch(error => {
     console.debug('[DTH Relationship] could not mark sent reply', error);
   });
 }, true);
@@ -3156,9 +3410,8 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key !== 'Enter' || (!event.ctrlKey && !event.metaKey)) return;
   const root = event.target?.closest?.('[role="dialog"]') || event.target?.closest?.('form') || document;
-  const replyText = getPendingXRelationshipComposeText(root);
-  if (!replyText) return;
-  confirmNativeXRelationshipSubmission(replyText).catch(() => {});
+  const compose = getPendingXRelationshipCompose(root);
+  if (compose?.contains(event.target)) confirmNativeXRelationshipSubmission(compose).catch(() => {});
 }, true);
 
 document.addEventListener('pointerdown', event => {

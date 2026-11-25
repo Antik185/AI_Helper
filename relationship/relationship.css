@@ -97,6 +97,10 @@ p { margin: 0; color: #959ca8; line-height: 1.45; }
 
 .session-banner[hidden] { display: none; }
 .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 0 5px rgba(46, 204, 113, .12); }
+.profile-scan-banner { border-color: rgba(29, 155, 240, .38); background: rgba(20, 43, 61, .62); }
+.profile-scan-banner .status-dot { background: #1d9bf0; box-shadow: 0 0 0 5px rgba(29, 155, 240, .13); }
+.profile-scan-banner.is-complete { border-color: rgba(46, 204, 113, .38); background: rgba(24, 52, 38, .52); }
+.profile-scan-banner.is-complete .status-dot { background: #2ecc71; box-shadow: 0 0 0 5px rgba(46, 204, 113, .12); }
 
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .stat { padding: 16px; border: 1px solid #252b34; border-radius: 16px; background: rgba(17, 21, 27, .86); }

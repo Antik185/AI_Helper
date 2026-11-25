@@ -9,6 +9,7 @@ assert.ok(helperStart >= 0 && helperEnd > helperStart, 'X composer reuse helpers
 
 function compose({ inDialog = false } = {}) {
   return {
+    isConnected: true,
     matches(selector) {
       return selector === 'compose';
     },
@@ -29,14 +30,16 @@ function article(postId, containedCompose = null) {
 
 const context = vm.createContext({
   COMPOSE_SELECTORS: ['compose'],
+  URLSearchParams,
   document: {
     activeElement: null,
-    body: { contains: () => true }
+    querySelectorAll: () => []
   },
-  location: { href: 'https://x.com/example/status/123' },
+  location: { href: 'https://x.com/example/status/123', pathname: '/example/status/123' },
   isVisible: () => true,
+  findSubmitButton: () => ({}),
   getTweetUrl: value => `https://x.com/example/status/${value.postId}`,
-  getXPostId: value => String(value).match(/status\/(\d+)/)?.[1] || ''
+  getXPostId: value => String(value).match(/(?:status\/|^)(\d+)$/)?.[1] || ''
 });
 vm.runInContext(source.slice(helperStart, helperEnd), context);
 
@@ -64,6 +67,16 @@ assert.equal(
   'An unrelated modal composer must not be reused by URL alone'
 );
 
+context.location.pathname = '/compose/post';
+context.location.search = '?in_reply_to=123';
+context.document.querySelectorAll = () => [focused, modal];
+assert.equal(vm.runInContext('findExistingReplyComposer(targetArticle)', context), modal);
+assert.equal(vm.runInContext('findExistingReplyComposer(otherArticle)', context), null);
+assert.equal(vm.runInContext("readXComposeText({ value: 'Typed reply', textContent: '' })", context), 'Typed reply');
+assert.equal(vm.runInContext("readXComposeText({ value: '', textContent: 'Old reply' })", context), '');
+context.location.pathname = '/example/status/123';
+context.document.querySelectorAll = () => [];
+
 const nested = compose();
 context.document.activeElement = nested;
 context.nestedArticle = article('456', nested);
@@ -78,6 +91,6 @@ const replyFlow = source.slice(
   source.indexOf('function currentXRelationshipPending')
 );
 assert.match(replyFlow, /const preferredCompose = findExistingReplyComposer\(article\)/);
-assert.match(replyFlow, /openReplyComposer\(article, preferredCompose\)/);
+assert.match(replyFlow, /openReplyComposer\(target, preferredCompose\)/);
 
 console.log('X composer reuse regression test: OK');

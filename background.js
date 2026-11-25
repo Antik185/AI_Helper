@@ -21,6 +21,7 @@ const DEFAULTS = {
   xAgentEnabled: true,
   xAgentProvider: 'openrouter',
   xAgentAutoSubmit: false,
+  xAgentTypeRepliesGradually: true,
   xAgentSoundEnabled: true,
   xAgentNotifyEnabled: true,
   xAgentOpenReport: true,
@@ -34,6 +35,8 @@ const DEFAULTS = {
   xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
   xRelationshipAutoLike: false,
   xRelationshipAutoFollow: false,
+  xRelationshipReadDelayMinSeconds: 3,
+  xRelationshipReadDelayMaxSeconds: 5,
   xRelationshipReplyToFollowers: false,
   theme: 'dark'
 };
@@ -160,6 +163,7 @@ function normalizeRelationshipSession(value, authors = []) {
     active: source.active === true && index < queue.length,
     auto: source.auto === true,
     replyToFollowers: source.replyToFollowers === true,
+    workerTabId: Number.isInteger(source.workerTabId) && source.workerTabId >= 0 ? source.workerTabId : null,
     queue,
     index,
     startedAt: relationshipText(source.startedAt, 80),
@@ -636,11 +640,30 @@ async function getXRecentOwnReplyTargets() {
   };
 }
 
-async function handleXRelationshipCommand(message) {
+async function resumeXRelationshipTab(session, author) {
+  if (session.workerTabId !== null) {
+    try {
+      const tab = await chrome.tabs.get(session.workerTabId);
+      const url = new URL(tab.pendingUrl || tab.url);
+      if (['x.com', 'twitter.com'].includes(url.hostname) && url.protocol === 'https:'
+        && !url.searchParams.has('dth_crm_scan')) {
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+        chrome.tabs.sendMessage(tab.id, { type: 'xRelationshipResume' }).catch(() => {});
+        return tab.id;
+      }
+    } catch { }
+  }
+  const tab = await chrome.tabs.create({ url: author.profileUrl, active: true });
+  return tab.id;
+}
+
+async function handleXRelationshipCommand(message, sender = {}) {
   const action = relationshipText(message.action, 60);
+  const tabId = sender.tab?.id ?? null;
   if (action === 'list') {
     await xRelationshipMutationQueue;
-    return getXRelationshipState();
+    return { ...(await getXRelationshipState()), tabId };
   }
   if (action === 'getApiConfig') {
     return { config: publicXRelationshipApiConfig(await getXRelationshipApiConfig()) };
@@ -663,6 +686,11 @@ async function handleXRelationshipCommand(message) {
       const handle = normalizeRelationshipHandle(value);
       return state.authors.find(author => author.id === handle.toLowerCase());
     };
+    const currentHandle = state.session.queue[state.session.index];
+    const currentAuthor = findAuthor(currentHandle);
+    const matchesStep = () => state.session.active && tabId !== null && state.session.workerTabId === tabId
+      && state.session.startedAt === message.expectedStartedAt
+      && currentAuthor?.id === normalizeRelationshipHandle(message.expectedHandle).toLowerCase();
 
     if (action === 'upsertAuthor') {
       const incoming = normalizeRelationshipAuthor(message.author || {});
@@ -807,6 +835,7 @@ async function handleXRelationshipCommand(message) {
         active: queue.length > 0,
         auto: message.auto === true,
         replyToFollowers,
+        workerTabId: tabId,
         queue,
         index: 0,
         startedAt: now,
@@ -814,21 +843,50 @@ async function handleXRelationshipCommand(message) {
         pendingHandle: '',
         pendingInteractionId: ''
       };
+      if (state.session.active && message.openTab === true) {
+        const tab = await chrome.tabs.create({ url: findAuthor(queue[0]).profileUrl, active: true });
+        state.session.workerTabId = tab.id;
+      }
+    } else if (action === 'resumeSession') {
+      if (!state.session.active || !currentAuthor) throw new Error('There is no active Relationship session.');
+      const workerTabId = await resumeXRelationshipTab(state.session, currentAuthor);
+      if (state.session.workerTabId === workerTabId) return state;
+      state.session.workerTabId = workerTabId;
     } else if (action === 'setPending') {
+      if ((state.session.active || message.expectedStartedAt) && (
+        !matchesStep() || currentAuthor.id !== normalizeRelationshipHandle(message.handle).toLowerCase()
+      )) return { ...state, pendingAccepted: false };
+      if (!state.session.active) state.session.workerTabId = tabId;
       state.session.pendingHandle = normalizeRelationshipHandle(message.handle);
       state.session.pendingInteractionId = relationshipText(message.interactionId, 120);
       state.session.updatedAt = now;
+      responseMeta.pendingAccepted = true;
     } else if (action === 'advanceSession') {
-      const expectedHandle = normalizeRelationshipHandle(message.expectedHandle).toLowerCase();
-      const currentHandle = String(state.session.queue[state.session.index] || '').toLowerCase();
-      if (expectedHandle && expectedHandle !== currentHandle) {
-        return saveXRelationshipState(state);
+      if (!matchesStep()) return { ...state, advanced: false };
+      const pending = currentAuthor.interactions.find(item =>
+        state.session.pendingHandle.toLowerCase() === currentAuthor.id && item.id === state.session.pendingInteractionId
+      );
+      switch (message.reason) {
+        case 'skip':
+          if (pending && pending.status !== 'sent') pending.status = 'skipped';
+          break;
+        case 'noPost':
+          if (pending) return { ...state, advanced: false };
+          break;
+        case 'followsBack':
+          if (pending || !currentAuthor.followsBack || state.session.replyToFollowers) {
+            return { ...state, advanced: false };
+          }
+          break;
+        default:
+          if (pending?.status !== 'sent') return { ...state, advanced: false };
       }
       state.session.index = Math.min(state.session.queue.length, state.session.index + 1);
       state.session.active = state.session.index < state.session.queue.length;
       state.session.pendingHandle = '';
       state.session.pendingInteractionId = '';
       state.session.updatedAt = now;
+      responseMeta.advanced = true;
     } else if (action === 'endSession') {
       state.session.active = false;
       state.session.pendingHandle = '';
@@ -838,7 +896,7 @@ async function handleXRelationshipCommand(message) {
       const source = message.data && typeof message.data === 'object' ? message.data : {};
       if (!Array.isArray(source.authors)) throw new Error('JSON does not contain an authors array.');
       state.authors = source.authors.map(normalizeRelationshipAuthor).filter(Boolean).slice(0, X_RELATIONSHIP_MAX_AUTHORS);
-      state.session = normalizeRelationshipSession(source.session, state.authors);
+      state.session = normalizeRelationshipSession({ ...source.session, workerTabId: null }, state.authors);
     } else if (action === 'reset') {
       state.authors = [];
       state.session = normalizeRelationshipSession(null, []);
@@ -2555,7 +2613,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg && msg.type === 'xRelationship') {
-    handleXRelationshipCommand(msg)
+    handleXRelationshipCommand(msg, sender)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(err => sendResponse({ ok: false, error: err.message || String(err) }));
     return true;

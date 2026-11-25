@@ -1,6 +1,11 @@
 const AUTHORS_KEY = 'xRelationshipAuthors';
 const SESSION_KEY = 'xRelationshipSession';
 const API_CONFIG_KEY = 'xRelationshipApiConfig';
+const READING_DELAY_DEFAULTS = {
+  xRelationshipReadDelayMinSeconds: 3,
+  xRelationshipReadDelayMaxSeconds: 5
+};
+const readingDelayKeys = Object.keys(READING_DELAY_DEFAULTS);
 
 const state = {
   authors: [],
@@ -218,7 +223,8 @@ async function refresh() {
     callRelationship('getApiConfig'),
     chrome.storage.sync.get({
       xRelationshipReplyToFollowers: false,
-      xRelationshipAutoFollow: false
+      xRelationshipAutoFollow: false,
+      ...READING_DELAY_DEFAULTS
     })
   ]);
   state.authors = response.authors || [];
@@ -228,6 +234,10 @@ async function refresh() {
   state.autoFollowAuthors = settings.xRelationshipAutoFollow === true;
   document.getElementById('replyToFollowers').checked = state.replyToFollowers;
   document.getElementById('autoFollowAuthors').checked = state.autoFollowAuthors;
+  for (const key of readingDelayKeys) {
+    const input = document.getElementById(key);
+    if (document.activeElement !== input) input.value = settings[key];
+  }
   if (requestedAuthor && !requestedAuthorApplied) {
     requestedAuthorApplied = true;
     state.filter = 'all';
@@ -472,6 +482,7 @@ async function startSession() {
   await chrome.storage.sync.set({ xAgentEnabled: true });
   const response = await callRelationship('startSession', {
     auto: true,
+    openTab: true,
     replyToFollowers: state.replyToFollowers
   });
   state.authors = response.authors || [];
@@ -482,7 +493,6 @@ async function startSession() {
     alert('There are no active authors to process.');
     return;
   }
-  await chrome.tabs.create({ url: author.profileUrl, active: true });
 }
 
 async function endSession() {
@@ -765,8 +775,7 @@ document.getElementById('clearApiToken').addEventListener('click', () => {
   saveApiSettings(true).catch(error => setApiStatus(error.message, true));
 });
 document.getElementById('resumeSession').addEventListener('click', () => {
-  const author = currentSessionAuthor();
-  if (author) chrome.tabs.create({ url: author.profileUrl, active: true });
+  callRelationship('resumeSession').then(() => refresh()).catch(error => alert(error.message));
 });
 document.getElementById('endSession').addEventListener('click', () => endSession().catch(error => alert(error.message)));
 document.getElementById('exportData').addEventListener('click', () => exportData().catch(error => alert(error.message)));
@@ -825,6 +834,28 @@ document.getElementById('autoFollowAuthors').addEventListener('change', async ev
     xRelationshipAutoFollow: state.autoFollowAuthors
   });
 });
+async function saveReadingDelay() {
+  const inputs = readingDelayKeys.map(key => document.getElementById(key));
+  const seconds = inputs.map((input, index) => {
+    const value = Number.isFinite(input.valueAsNumber)
+      ? Math.round(input.valueAsNumber)
+      : READING_DELAY_DEFAULTS[readingDelayKeys[index]];
+    return Math.max(Number(input.min), Math.min(Number(input.max), value));
+  });
+  let [min, max] = seconds.sort((a, b) => a - b);
+  if (min === max) {
+    min = Math.min(min, Number(inputs[1].max) - 1);
+    max = min + 1;
+  }
+  inputs[0].value = min;
+  inputs[1].value = max;
+  await chrome.storage.sync.set({ [readingDelayKeys[0]]: min, [readingDelayKeys[1]]: max });
+}
+for (const key of readingDelayKeys) {
+  document.getElementById(key).addEventListener('change', () => {
+    saveReadingDelay().catch(error => alert(error.message));
+  });
+}
 document.getElementById('resetData').addEventListener('click', async () => {
   if (!confirm('Delete every tracked author and all relationship history from this browser?')) return;
   await callRelationship('reset');
@@ -845,6 +876,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync' && changes.xRelationshipAutoFollow) {
     state.autoFollowAuthors = changes.xRelationshipAutoFollow.newValue === true;
     document.getElementById('autoFollowAuthors').checked = state.autoFollowAuthors;
+  }
+  if (area === 'sync') {
+    for (const key of readingDelayKeys) {
+      if (!changes[key]) continue;
+      const input = document.getElementById(key);
+      if (document.activeElement !== input) input.value = changes[key].newValue ?? READING_DELAY_DEFAULTS[key];
+    }
   }
 });
 

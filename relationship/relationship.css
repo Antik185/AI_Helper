@@ -140,6 +140,20 @@ p { margin: 0; color: #959ca8; line-height: 1.45; }
   cursor: pointer;
 }
 .toolbar-toggle input { width: 17px; min-height: 17px; margin: 0; padding: 0; accent-color: #2ecc71; }
+.toolbar-delay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px 7px;
+  border: 1px solid #343a45;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 750;
+}
+.toolbar-delay legend { padding-inline: 4px; }
+.toolbar-delay input { width: 62px; min-height: 28px; padding: 3px 6px; border-radius: 7px; }
 .toolbar-spacer { flex: 1; }
 
 .authors { display: grid; gap: 12px; }
@@ -252,7 +266,7 @@ p { margin: 0; color: #959ca8; line-height: 1.45; }
     border-color: rgba(31, 164, 86, .42);
     background: linear-gradient(120deg, rgba(46, 204, 113, .11), transparent 42%), #fff;
   }
-  .toolbar-toggle { border-color: #d4d9e1; color: #3b4450; }
+  .toolbar-toggle, .toolbar-delay { border-color: #d4d9e1; color: #3b4450; }
   .api-panel[open] > summary { border-color: #dde1e8; }
   .session-banner { border-color: rgba(31, 164, 86, .35); background: rgba(225, 249, 235, .95); }
   input, select, textarea, .interaction { border-color: #d8dde5; background: #fff; color: #151820; }

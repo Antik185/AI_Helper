@@ -18,6 +18,7 @@ const FIELDS = [
   'xAgentEnabled',
   'xAgentProvider',
   'xAgentAutoSubmit',
+  'xAgentTypeRepliesGradually',
   'xAgentSoundEnabled',
   'xAgentNotifyEnabled',
   'xAgentOpenReport',
@@ -55,6 +56,7 @@ const DEFAULTS = {
   xAgentEnabled: true,
   xAgentProvider: 'openrouter',
   xAgentAutoSubmit: false,
+  xAgentTypeRepliesGradually: true,
   xAgentSoundEnabled: true,
   xAgentNotifyEnabled: true,
   xAgentOpenReport: true,
@@ -315,7 +317,7 @@ function showFeatureStates() {
   setControlDisabled('setupChatgptWindow', !chatGPTNeeded);
 
   [
-    'xAgentProvider', 'xAgentAutoSubmit', 'xAgentSoundEnabled', 'xAgentNotifyEnabled',
+    'xAgentProvider', 'xAgentAutoSubmit', 'xAgentTypeRepliesGradually', 'xAgentSoundEnabled', 'xAgentNotifyEnabled',
     'xAgentOpenReport', 'xAgentRunCount', 'xAgentDelayMinSeconds',
     'xAgentDelayMaxSeconds', 'xAgentBeforeReplyMinSeconds', 'xAgentBeforeReplyMaxSeconds',
     'xAgentMemoryLimit', 'xAgentPrompt',

@@ -34,6 +34,8 @@ const stored = {
 };
 
 const listener = { addListener() {} };
+const openTabs = new Map();
+let nextTabId = 50;
 const chrome = {
   storage: {
     local: {
@@ -50,7 +52,21 @@ const chrome = {
   notifications: { onClicked: listener },
   runtime: { onInstalled: listener, onConnect: listener, onMessage: listener },
   contextMenus: { onClicked: listener },
-  tabs: { onRemoved: listener },
+  tabs: {
+    onRemoved: listener,
+    async create({ url, active }) {
+      const tab = { id: nextTabId++, windowId: 1, url, active };
+      openTabs.set(tab.id, tab);
+      return tab;
+    },
+    async get(id) {
+      if (!openTabs.has(id)) throw new Error('Tab closed');
+      return openTabs.get(id);
+    },
+    async update(id, properties) { return Object.assign(await this.get(id), properties); },
+    async sendMessage() {}
+  },
+  windows: { async update() {} },
   debugger: { onDetach: listener }
 };
 
@@ -187,21 +203,43 @@ vm.runInContext(fs.readFileSync('background.js', 'utf8'), context, { filename: '
   assert.equal(secondCalls.filter(value => value.includes('/tweets/search/recent?')).length, 0);
   assert.equal(secondCalls.length, 0);
 
-  const automaticSession = await vm.runInContext(
-    "handleXRelationshipCommand({ action: 'startSession', auto: true })",
-    context
-  );
+  const command = (action, payload = {}, tabId = 1) => {
+    context.relationshipMessage = { ...payload, action };
+    context.relationshipSender = { tab: { id: tabId } };
+    return vm.runInContext('handleXRelationshipCommand(relationshipMessage, relationshipSender)', context);
+  };
+  const automaticSession = await command('startSession', { auto: true, openTab: true });
   assert.equal(automaticSession.session.auto, true);
   assert.equal(automaticSession.session.index, 0);
-  const guardedAdvance = await vm.runInContext(
-    "handleXRelationshipCommand({ action: 'advanceSession', expectedHandle: 'another_author' })",
-    context
-  );
-  assert.equal(guardedAdvance.session.index, 0);
-  const validAdvance = await vm.runInContext(
-    "handleXRelationshipCommand({ action: 'advanceSession', expectedHandle: 'author' })",
-    context
-  );
+  const worker = automaticSession.session.workerTabId;
+  assert.equal(openTabs.get(worker).url, 'https://x.com/author');
+  const step = { expectedHandle: 'author', expectedStartedAt: automaticSession.session.startedAt };
+  assert.equal((await command('list', {}, worker)).tabId, worker);
+  assert.equal((await command('resumeSession')).session.workerTabId, worker);
+  assert.equal(openTabs.size, 1);
+
+  const wrongTab = await command('advanceSession', { ...step, reason: 'noPost' }, 2);
+  assert.equal(wrongTab.advanced, false);
+  assert.equal(wrongTab.session.index, 0);
+  const wrongAuthor = await command('advanceSession', { ...step, expectedHandle: 'another_author', reason: 'noPost' }, worker);
+  assert.equal(wrongAuthor.advanced, false);
+  const stale = await command('advanceSession', { ...step, expectedStartedAt: 'previous-session', reason: 'noPost' }, worker);
+  assert.equal(stale.advanced, false);
+  assert.equal((await command('advanceSession', step, worker)).advanced, false);
+
+  const pending = { ...step, handle: 'author', interactionId: 'legacy-error' };
+  assert.equal((await command('setPending', pending, 2)).pendingAccepted, false);
+  assert.equal((await command('setPending', pending, worker)).pendingAccepted, true);
+  assert.equal((await command('advanceSession', step, worker)).advanced, false);
+  assert.equal((await command('advanceSession', { ...step, reason: 'noPost' }, worker)).advanced, false);
+
+  openTabs.delete(worker);
+  const replacement = (await command('resumeSession')).session.workerTabId;
+  assert.notEqual(replacement, worker);
+  assert.equal((await command('advanceSession', { ...step, reason: 'skip' }, worker)).advanced, false);
+  await command('patchInteraction', { ...pending, patch: { status: 'sent' } }, replacement);
+  const validAdvance = await command('advanceSession', step, replacement);
+  assert.equal(validAdvance.advanced, true);
   assert.equal(validAdvance.session.active, false);
 
   context.handleImportText = '@New_User\ninvalid handle!\n@author\n@new_user\nhttps://x.com/Second_User';

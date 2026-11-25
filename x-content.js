@@ -197,8 +197,12 @@ function findExistingReplyComposer(article, preferredCompose = null) {
     .find(compose => isReusableXReplyCompose(compose, article)) || null;
 }
 
+function normalizeXComposeText(text) {
+  return text.replace(/[\u200B\uFEFF]/g, '').trim();
+}
+
 function readXComposeText(el) {
-  return (el?.value ?? el?.textContent ?? '').replace(/[\u200B\uFEFF]/g, '').trim();
+  return normalizeXComposeText(el?.value ?? el?.textContent ?? '');
 }
 
 function composeHasText(el) {
@@ -211,13 +215,17 @@ function nextFrame() {
   return new Promise(r => requestAnimationFrame(() => r()));
 }
 
+function setXTextareaText(el, value, inputType, data) {
+  // Use the native setter so React notices the change when the input event fires.
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+  setter.call(el, value);
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType, data }));
+}
+
 async function replaceComposeText(el, newText) {
   el.focus();
   if (el.matches('textarea')) {
-    // Use the native setter so React notices the change when the input event fires.
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-    setter.call(el, newText);
-    el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText', data: newText }));
+    setXTextareaText(el, newText, 'insertReplacementText', newText);
     return;
   }
   await nextFrame();
@@ -869,7 +877,7 @@ function getAgentDelayRange([minKey, maxKey] = X_AGENT_BETWEEN_REPLIES, read = k
   const second = normalizeXAgentNumber(maxKey, read(maxKey));
   let min = Math.min(first, second);
   let max = Math.max(first, second);
-  if (minKey === X_AGENT_BEFORE_REPLY[0] && min === max) {
+  if (minKey !== X_AGENT_BETWEEN_REPLIES[0] && min === max) {
     min = Math.min(min, X_AGENT_NUMBER_RULES[maxKey].max - 1);
     max = min + 1;
   }
@@ -947,6 +955,7 @@ let xAgentPendingSettings = {};
 let xAgentProcessedPosts = new Map();
 let xAgentProcessedSaveQueue = Promise.resolve();
 let xRelationshipState = { authors: [], session: null };
+let xRelationshipTabId = null;
 let xRelationshipScanTimer = null;
 let xRelationshipProfileCheckedAt = 0;
 let xRelationshipMarkingSubmit = false;
@@ -1028,6 +1037,7 @@ async function syncRecentXRepliesFromApi() {
 async function refreshXRelationshipState(updateUi = true) {
   try {
     const response = await xRelationshipCommand('list');
+    xRelationshipTabId = response.tabId ?? null;
     const nextSessionId = String(response.session?.startedAt || '');
     xRelationshipState = {
       authors: Array.isArray(response.authors) ? response.authors : [],
@@ -1077,7 +1087,7 @@ function isXRelationshipProfileScanPage() {
 
 function currentXRelationshipAuthor() {
   const session = xRelationshipState.session;
-  if (!session?.active) return null;
+  if (!session?.active || xRelationshipTabId === null || session.workerTabId !== xRelationshipTabId) return null;
   const handle = session.queue?.[session.index];
   return trackedXAuthor(handle);
 }
@@ -1085,7 +1095,8 @@ function currentXRelationshipAuthor() {
 function getXRelationshipProgressText() {
   const session = xRelationshipState.session;
   const author = currentXRelationshipAuthor();
-  if (!session?.active || !author) return 'No active session';
+  if (!session?.active) return 'No active session';
+  if (!author) return 'Resume the active session from Relationship CRM';
   return `${session.index + 1}/${session.queue.length} · @${author.handle}${author.followsBack ? ' · Follows you ✓' : ''}`;
 }
 
@@ -1567,13 +1578,16 @@ function setupXAgentDrag(trigger) {
 
 const X_AGENT_BETWEEN_REPLIES = ['xAgentDelayMinSeconds', 'xAgentDelayMaxSeconds'];
 const X_AGENT_BEFORE_REPLY = ['xAgentBeforeReplyMinSeconds', 'xAgentBeforeReplyMaxSeconds'];
+const X_RELATIONSHIP_READ_DELAY = ['xRelationshipReadDelayMinSeconds', 'xRelationshipReadDelayMaxSeconds'];
 const X_AGENT_NUMBER_RULES = {
   xAgentRunCount: { min: 1, max: 20, fallback: 3 },
   xAgentMemoryLimit: { min: 0, max: 50, fallback: 8 },
   xAgentDelayMinSeconds: { min: 5, max: 600, fallback: 30 },
   xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 },
   xAgentBeforeReplyMinSeconds: { min: 1, max: 600, fallback: 1 },
-  xAgentBeforeReplyMaxSeconds: { min: 1, max: 600, fallback: 3 }
+  xAgentBeforeReplyMaxSeconds: { min: 1, max: 600, fallback: 3 },
+  xRelationshipReadDelayMinSeconds: { min: 1, max: 600, fallback: 3 },
+  xRelationshipReadDelayMaxSeconds: { min: 1, max: 600, fallback: 5 }
 };
 
 function scheduleXAgentSettingSave(key, value, delay = 250) {
@@ -1743,6 +1757,7 @@ function createXAgentSettingsSection() {
   toggles.className = 'dth-x-agent-settings-toggles';
   toggles.append(
     createXAgentToggleSetting('xAgentAutoSubmit', 'Auto send'),
+    createXAgentToggleSetting('xAgentTypeRepliesGradually', 'Type replies gradually'),
     createXAgentToggleSetting('xAgentSoundEnabled', 'Sound'),
     createXAgentToggleSetting('xAgentNotifyEnabled', 'Notification'),
     createXAgentToggleSetting('xAgentOpenReport', 'Open report')
@@ -2196,12 +2211,12 @@ async function waitForXReplySubmission(compose, { replyPostId, previousErrors })
   return false;
 }
 
-async function waitBeforeXAgentReply(canContinue, feedRun) {
-  let remaining = getRandomAgentDelayMs(X_AGENT_BEFORE_REPLY);
+async function waitForXAgentCountdown(ms, canContinue, status, feedRun = false) {
+  let remaining = ms;
   try {
     while (canContinue()) {
       xAgentNextReplyMs = remaining;
-      updateXAgentPanel('Waiting before reply');
+      updateXAgentPanel(status);
       if (feedRun && xAgentPaused) {
         await sleep(200);
         continue;
@@ -2218,6 +2233,58 @@ async function waitBeforeXAgentReply(canContinue, feedRun) {
     xAgentNextReplyMs = null;
     updateXAgentPanel();
   }
+}
+
+function pickXReplyWordPace() {
+  return 36 + Math.floor(Math.random() * 85);
+}
+
+function getXReplyTypingDelay(chunk, batchSize, wordPace) {
+  const base = Math.round(wordPace * (0.75 + Math.random() * 0.5)) * batchSize;
+  if (/[\r\n]$/u.test(chunk)) return base + 180 + Math.floor(Math.random() * 420);
+  if (/[\p{Sentence_Terminal}\u2026]$/u.test(chunk)) return base + 95 + Math.floor(Math.random() * 300);
+  if (/[,\u2013\u2014\p{Terminal_Punctuation}]$/u.test(chunk)) return base + 55 + Math.floor(Math.random() * 140);
+  if (/\s$/u.test(chunk)) {
+    return Math.random() < 0.55 ? base : base + 120 + Math.floor(Math.random() * 380);
+  }
+  if (Math.random() >= 0.965) return base + 400 + Math.floor(Math.random() * 600);
+  return base;
+}
+
+async function writeXAgentReply(compose, reply, canContinue, feedRun) {
+  if (!canContinue()) return false;
+  if (STATE.settings?.xAgentTypeRepliesGradually === false) {
+    await replaceComposeText(compose, reply);
+    return true;
+  }
+
+  const graphemes = typeof Intl.Segmenter === 'function'
+    ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(reply), part => part.segment)
+    : Array.from(reply);
+  const isTextarea = compose.matches('textarea');
+  const batchSize = isTextarea ? 1 : 4;
+  const readCurrent = () => isTextarea ? compose.value : readXComposeText(compose);
+  let expected = readCurrent();
+  let written = '';
+  let wordPace = pickXReplyWordPace();
+  compose.focus();
+
+  for (let index = 0; index < graphemes.length; index += batchSize) {
+    while (feedRun && xAgentPaused && canContinue() && readCurrent() === expected) {
+      await sleep(200);
+    }
+    if (!canContinue() || readCurrent() !== expected) return false;
+    const chunk = graphemes.slice(index, index + batchSize).join('');
+    written += chunk;
+    if (isTextarea) setXTextareaText(compose, written, 'insertText', chunk);
+    else await replaceComposeText(compose, written);
+    expected = isTextarea ? written : normalizeXComposeText(written);
+    if (index + batchSize < graphemes.length) {
+      await sleep(getXReplyTypingDelay(chunk, batchSize, wordPace));
+      if (/\s/u.test(chunk)) wordPace = pickXReplyWordPace();
+    }
+  }
+  return true;
 }
 
 async function runXAgentReply(article, btn, options = {}) {
@@ -2244,6 +2311,7 @@ async function runXAgentReply(article, btn, options = {}) {
   const recordRelationship = !!relationshipAuthor && options.recordRelationship !== false;
   const preferredCompose = findExistingReplyComposer(article);
   const relationshipStep = options.relationshipAuthor ? getXRelationshipAutomationStep() : '';
+  const expectedStartedAt = relationshipStep ? xRelationshipState.session.startedAt : '';
   const canRun = () => STATE.settings?.xAgentEnabled === true
     && (!feedRun || !xAgentStopRequested)
     && (!relationshipStep || (!xRelationshipAutomationStopRequested && getXRelationshipAutomationStep() === relationshipStep));
@@ -2252,9 +2320,20 @@ async function runXAgentReply(article, btn, options = {}) {
     return { ok: false, cancelled: true, tweet: payload };
   };
   try {
+    if (options.relationshipAuthor && !relationshipStep) return cancelReply();
     const postId = getXPostId(payload.url);
     if (!postId) throw new Error('Could not identify the X post to reply to.');
     if (!payload.text) throw new Error('Tweet text not found.');
+    if (options.relationshipAuthor) {
+      const postPage = location.href;
+      const canReadPost = () => canRun() && location.href === postPage
+        && article.isConnected && getXPostId(getTweetUrl(article)) === postId;
+      const ready = await waitForXAgentCountdown(
+        getRandomAgentDelayMs(X_RELATIONSHIP_READ_DELAY), canReadPost, 'Reading post'
+      );
+      if (!ready) return cancelReply();
+      updateXAgentPanel('Generating reply');
+    }
     const resp = await callBackground({
       type: 'xAgentReply',
       tweet: payload,
@@ -2271,37 +2350,47 @@ async function runXAgentReply(article, btn, options = {}) {
     const compose = await openReplyComposer(target, preferredCompose);
     const composeUrl = location.href;
     const originalText = readXComposeText(compose);
-    const canWrite = () =>
-      canRun() && location.href === composeUrl && isAvailableXCompose(compose)
-      && readXComposeText(compose) === originalText;
-    if (!await waitBeforeXAgentReply(canWrite, feedRun)) {
+    const canWrite = () => canRun() && location.href === composeUrl && isAvailableXCompose(compose);
+    const readyToWrite = await waitForXAgentCountdown(
+      getRandomAgentDelayMs(X_AGENT_BEFORE_REPLY),
+      () => canWrite() && readXComposeText(compose) === originalText,
+      'Waiting before reply', feedRun
+    );
+    if (!readyToWrite) {
       if (!canRun()) return cancelReply();
       throw new Error('The reply editor changed while waiting. Review your draft in X.');
     }
     updateXAgentPanel('Writing reply');
-    await replaceComposeText(compose, reply);
+    if (!await writeXAgentReply(compose, reply, canWrite, feedRun)) {
+      if (!canRun()) return cancelReply();
+      throw new Error('The reply editor changed during typing. Review your draft in X.');
+    }
     if (readXComposeText(compose) !== reply) {
       throw new Error('X did not accept the reply text. Nothing was submitted.');
     }
-    let relationshipInteractionId = '';
+    let interaction = null;
     if (recordRelationship) {
-      relationshipInteractionId = crypto.randomUUID();
+      interaction = {
+        id: crypto.randomUUID(),
+        postId,
+        postUrl: payload.url,
+        postText: payload.text,
+        replyText: reply,
+        status: 'draft',
+        createdAt: new Date().toISOString()
+      };
       await xRelationshipCommand('addInteraction', {
         handle: relationshipAuthor.handle,
-        interaction: {
-          id: relationshipInteractionId,
-          postUrl: payload.url,
-          postText: payload.text,
-          replyText: reply,
-          status: 'draft',
-          createdAt: new Date().toISOString()
-        }
+        interaction
       });
-      await xRelationshipCommand('setPending', {
+      const pending = await xRelationshipCommand('setPending', {
         handle: relationshipAuthor.handle,
-        interactionId: relationshipInteractionId
+        interactionId: interaction.id,
+        expectedHandle: relationshipAuthor.handle,
+        expectedStartedAt
       });
-      xRelationshipPendingCompose = compose;
+      if (pending.pendingAccepted) xRelationshipPendingCompose = compose;
+      else if (relationshipStep) return cancelReply();
       await refreshXRelationshipState();
     }
     if (!canRun()) return cancelReply();
@@ -2315,9 +2404,11 @@ async function runXAgentReply(article, btn, options = {}) {
       throw new Error('X did not confirm the reply submission. The CRM draft was kept for review.');
     }
     const sent = !!submission;
-    if (sent && relationshipInteractionId) {
+    if (sent && interaction) {
       try {
-        await markCurrentXRelationshipReplySent(reply, await waitForPostedXRelationshipReply(reply));
+        await markCurrentXRelationshipReplySent(reply, await waitForPostedXRelationshipReply(reply), {
+          author: relationshipAuthor, interaction
+        });
       } catch (error) {
         console.warn('[DTH Relationship] Reply was sent but CRM status could not be updated:', error);
       }
@@ -2332,7 +2423,7 @@ async function runXAgentReply(article, btn, options = {}) {
     if (!options.silent) playAgentSound(sent ? 'sent' : 'ready');
     setAgentButtonState(btn, sent ? 'sent' : 'draft', sent ? 'Reply sent.' : 'Reply inserted as a draft.');
     setTimeout(() => setAgentButtonState(btn, 'idle'), sent ? 2500 : 3500);
-    return { ok: true, sent, reply, tweet: payload, relationshipInteractionId };
+    return { ok: true, sent, reply, tweet: payload, relationshipInteractionId: interaction?.id || '' };
   } catch (e) {
     console.error('[DTH X Agent] error:', e);
     if (!options.silent) playAgentSound('ready');
@@ -2349,14 +2440,14 @@ async function runXAgentReply(article, btn, options = {}) {
 function currentXRelationshipPending() {
   const session = xRelationshipState.session;
   if (!session?.pendingInteractionId || !session.pendingHandle) return null;
+  if (xRelationshipTabId === null || session.workerTabId !== xRelationshipTabId) return null;
   const author = trackedXAuthor(session.pendingHandle);
   const interaction = author?.interactions?.find(item => item.id === session.pendingInteractionId);
   return author && interaction ? { author, interaction } : null;
 }
 
-async function markCurrentXRelationshipReplySent(replyText = '', postedReply = null) {
+async function markCurrentXRelationshipReplySent(replyText, postedReply, pending) {
   if (xRelationshipMarkingSubmit) return;
-  const pending = currentXRelationshipPending();
   if (!pending || pending.interaction.status === 'sent') return;
   xRelationshipMarkingSubmit = true;
   try {
@@ -2406,7 +2497,7 @@ function navigateToCurrentXRelationshipAuthor() {
 
 function getXRelationshipAutomationStep(author = currentXRelationshipAuthor()) {
   const session = xRelationshipState.session;
-  if (!session?.active || !author) return '';
+  if (!session?.active || !author || xRelationshipTabId === null || session.workerTabId !== xRelationshipTabId) return '';
   return `${session.startedAt || ''}:${session.index}:${author.id}`;
 }
 
@@ -2420,9 +2511,13 @@ function scheduleXRelationshipAutomation(delay = 800) {
   if (xRelationshipAutomationTimer || (step && step === xRelationshipAutomationBlockedStep)) return;
   xRelationshipAutomationTimer = setTimeout(() => {
     xRelationshipAutomationTimer = null;
+    if (getXRelationshipAutomationStep() !== step) {
+      scheduleXRelationshipAutomation();
+      return;
+    }
     runXRelationshipAutomation().catch(error => {
-      const blockedAuthor = currentXRelationshipAuthor();
-      xRelationshipAutomationBlockedStep = getXRelationshipAutomationStep(blockedAuthor);
+      if (getXRelationshipAutomationStep() !== step) return;
+      xRelationshipAutomationBlockedStep = step;
       const message = error?.message || String(error);
       console.error('[DTH Relationship] automatic step failed', error);
       updateXAgentPanel(`Relationship paused · ${message.slice(0, 80)}`);
@@ -2507,27 +2602,27 @@ async function runXRelationshipAutomation() {
       return;
     }
 
-    if (author.followsBack && session.replyToFollowers !== true) {
-      showXRelationshipToast(`@${author.handle} follows you · moving to next author`);
-      await completeCurrentXRelationshipAuthor(author.id);
-      return;
-    }
-
     const pending = currentXRelationshipPending();
     if (pending) {
       if (pending.interaction.status === 'sent') {
         const waited = await waitForXRelationshipDelay(getRandomAgentDelayMs(), initialStep);
-        if (waited) await completeCurrentXRelationshipAuthor(author.id);
+        if (waited) await completeCurrentXRelationshipAuthor(initialStep);
         return;
       }
       throw new Error('An unsent Relationship draft already exists. Send it or press Skip.');
+    }
+
+    if (author.followsBack && session.replyToFollowers !== true) {
+      showXRelationshipToast(`@${author.handle} follows you · moving to next author`);
+      await completeCurrentXRelationshipAuthor(initialStep, 'followsBack');
+      return;
     }
 
     updateXAgentPanel(`Relationship · finding a new post by @${author.handle}`);
     const article = await findNextXRelationshipTarget(author);
     if (!article) {
       showXRelationshipToast(`No new post found for @${author.handle} · skipped`);
-      await completeCurrentXRelationshipAuthor(author.id);
+      await completeCurrentXRelationshipAuthor(initialStep, 'noPost');
       return;
     }
 
@@ -2547,8 +2642,10 @@ async function runXRelationshipAutomation() {
     if (!result.sent) throw new Error('Reply was prepared but X did not confirm sending it.');
 
     await refreshXRelationshipState(false);
+    if (xRelationshipAutomationStopRequested || getXRelationshipAutomationStep() !== initialStep) return;
     const confirmed = currentXRelationshipPending();
-    if (!confirmed || confirmed.author.id !== author.id || confirmed.interaction.status !== 'sent') {
+    if (!confirmed || confirmed.author.id !== author.id || confirmed.interaction.status !== 'sent'
+      || confirmed.interaction.id !== result.relationshipInteractionId) {
       throw new Error('Reply was sent, but its CRM record was not confirmed.');
     }
 
@@ -2568,7 +2665,7 @@ async function runXRelationshipAutomation() {
     }
 
     const waited = await waitForXRelationshipDelay(getRandomAgentDelayMs(), initialStep);
-    if (waited) await completeCurrentXRelationshipAuthor(author.id);
+    if (waited) await completeCurrentXRelationshipAuthor(initialStep);
   } finally {
     xRelationshipAutomationRunning = false;
     xAgentNextReplyMs = null;
@@ -2626,13 +2723,14 @@ async function prepareCurrentXRelationshipReply() {
   if (result?.ok) updateXAgentPanel('Draft ready · send it in X');
 }
 
-async function completeCurrentXRelationshipAuthor(expectedAuthorId = '') {
+async function completeCurrentXRelationshipAuthor(expectedStep = '', reason = 'replySent') {
   await refreshXRelationshipState(false);
   const author = currentXRelationshipAuthor();
   if (!author) return;
-  if (expectedAuthorId && author.id !== String(expectedAuthorId).toLowerCase()) return false;
+  if (expectedStep && getXRelationshipAutomationStep(author) !== expectedStep) return false;
+  const expectedStartedAt = xRelationshipState.session.startedAt;
   const pending = currentXRelationshipPending();
-  if (pending && pending.interaction.status !== 'sent') {
+  if (reason === 'replySent' && pending?.interaction.status !== 'sent') {
     alert('The prepared reply is not marked as sent. Send it with the native X Reply button, or use Skip.');
     return;
   }
@@ -2661,11 +2759,14 @@ async function completeCurrentXRelationshipAuthor(expectedAuthorId = '') {
     patch: { following, followsBack, lastCheckedAt: now }
   });
   const response = await xRelationshipCommand('advanceSession', {
-    expectedHandle: expectedAuthorId ? author.handle : ''
+    expectedHandle: author.handle,
+    expectedStartedAt,
+    reason
   });
   xRelationshipPendingCompose = null;
   xRelationshipState = { authors: response.authors || [], session: response.session || null };
   updateXRelationshipControls();
+  if (!response.advanced) return false;
   if (!xRelationshipState.session?.active) {
     updateXAgentPanel('Relationship session complete');
     playAgentSound('complete');
@@ -2677,15 +2778,14 @@ async function completeCurrentXRelationshipAuthor(expectedAuthorId = '') {
 }
 
 async function skipCurrentXRelationshipAuthor() {
-  const pending = currentXRelationshipPending();
-  if (pending && pending.interaction.status !== 'sent') {
-    await xRelationshipCommand('patchInteraction', {
-      handle: pending.author.handle,
-      interactionId: pending.interaction.id,
-      patch: { status: 'skipped' }
-    });
-  }
-  const response = await xRelationshipCommand('advanceSession');
+  const author = currentXRelationshipAuthor();
+  if (!author) return;
+  const response = await xRelationshipCommand('advanceSession', {
+    expectedHandle: author.handle,
+    expectedStartedAt: xRelationshipState.session.startedAt,
+    reason: 'skip'
+  });
+  if (!response.advanced) return;
   xRelationshipPendingCompose = null;
   xRelationshipState = { authors: response.authors || [], session: response.session || null };
   updateXRelationshipControls();
@@ -2752,7 +2852,7 @@ function updateXRelationshipControls() {
       : 'Only manually tracked authors are included.';
   }
   if (start) {
-    start.hidden = !!author;
+    start.hidden = xRelationshipState.session?.active === true;
     start.disabled = count === 0 || xAgentRunning || xAgentActiveJobs > 0;
   }
   if (prepare) {
@@ -2826,7 +2926,7 @@ function updateXAgentPanel(statusText) {
     label = 'Paused';
   } else if (xAgentRunning) {
     state = 'running';
-    label = xAgentActiveJobs > 0 && xAgentNextReplyMs !== null ? 'Waiting before reply' : 'Running';
+    label = xAgentActiveJobs > 0 ? xAgentPanelStatus : 'Running';
   } else if (xRelationshipAutomationRunning) {
     state = 'running';
     label = xAgentPanelStatus || 'Relationship running';
@@ -3364,6 +3464,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'xRelationshipResume') {
+    xRelationshipAutomationBlockedStep = '';
+    refreshXRelationshipState();
+    sendResponse({ ok: true });
+    return;
+  }
   if (msg && msg.type === 'xRelationshipInspectProfile') {
     inspectCurrentXProfileForCrm(msg.handle)
       .then(result => sendResponse({ ok: true, ...result }))
@@ -3447,9 +3553,10 @@ async function waitForPostedXRelationshipReply(replyText, attempts = 10) {
 }
 
 async function confirmNativeXRelationshipSubmission(compose) {
+  const pending = currentXRelationshipPending();
   const replyText = readXComposeText(compose);
-  if (replyText && await waitForXReplySubmission(compose, getXReplySubmissionFeedback())) {
-    await markCurrentXRelationshipReplySent(replyText, await waitForPostedXRelationshipReply(replyText));
+  if (pending && replyText && await waitForXReplySubmission(compose, getXReplySubmissionFeedback())) {
+    await markCurrentXRelationshipReplySent(replyText, await waitForPostedXRelationshipReply(replyText), pending);
   }
 }
 

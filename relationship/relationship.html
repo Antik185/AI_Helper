@@ -103,6 +103,11 @@
         <input id="autoFollowAuthors" type="checkbox">
         <span>Auto-follow tracked authors</span>
       </label>
+      <fieldset class="toolbar-delay">
+        <legend>Reading delay (seconds)</legend>
+        <label>Min <input id="xRelationshipReadDelayMinSeconds" type="number" min="1" max="600" step="1" value="3"></label>
+        <label>Max <input id="xRelationshipReadDelayMaxSeconds" type="number" min="1" max="600" step="1" value="5"></label>
+      </fieldset>
       <div class="toolbar-spacer"></div>
       <button id="exportData" type="button">Export JSON</button>
       <button id="importData" type="button">Import CRM JSON</button>

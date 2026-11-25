@@ -25,6 +25,8 @@ const FIELDS = [
   'xAgentMemoryLimit',
   'xAgentDelayMinSeconds',
   'xAgentDelayMaxSeconds',
+  'xAgentBeforeReplyMinSeconds',
+  'xAgentBeforeReplyMaxSeconds',
   'xAgentPrompt',
   'xRelationshipPrompt',
   'xRelationshipAutoLike',
@@ -60,6 +62,8 @@ const DEFAULTS = {
   xAgentMemoryLimit: 8,
   xAgentDelayMinSeconds: 30,
   xAgentDelayMaxSeconds: 90,
+  xAgentBeforeReplyMinSeconds: 5,
+  xAgentBeforeReplyMaxSeconds: 10,
   xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
   xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
   xRelationshipAutoLike: false,
@@ -313,7 +317,8 @@ function showFeatureStates() {
   [
     'xAgentProvider', 'xAgentAutoSubmit', 'xAgentSoundEnabled', 'xAgentNotifyEnabled',
     'xAgentOpenReport', 'xAgentRunCount', 'xAgentDelayMinSeconds',
-    'xAgentDelayMaxSeconds', 'xAgentMemoryLimit', 'xAgentPrompt',
+    'xAgentDelayMaxSeconds', 'xAgentBeforeReplyMinSeconds', 'xAgentBeforeReplyMaxSeconds',
+    'xAgentMemoryLimit', 'xAgentPrompt',
     'xRelationshipPrompt', 'xRelationshipAutoLike', 'xRelationshipAutoFollow',
     'xRelationshipReplyToFollowers', 'startXAgent'
   ].forEach(id => setControlDisabled(id, xAgentOff));
@@ -535,7 +540,9 @@ async function save() {
     xAgentRunCount: { min: 1, max: 20, fallback: 3 },
     xAgentMemoryLimit: { min: 0, max: 50, fallback: 8 },
     xAgentDelayMinSeconds: { min: 5, max: 600, fallback: 30 },
-    xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 }
+    xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 },
+    xAgentBeforeReplyMinSeconds: { min: 1, max: 600, fallback: 5 },
+    xAgentBeforeReplyMaxSeconds: { min: 1, max: 600, fallback: 10 }
   };
   for (const key of FIELDS) {
     const el = document.getElementById(key);
@@ -550,11 +557,18 @@ async function save() {
     }
     else payload[key] = el.value;
   }
-  if (payload.xAgentDelayMinSeconds > payload.xAgentDelayMaxSeconds) {
-    [payload.xAgentDelayMinSeconds, payload.xAgentDelayMaxSeconds] =
-      [payload.xAgentDelayMaxSeconds, payload.xAgentDelayMinSeconds];
-    document.getElementById('xAgentDelayMinSeconds').value = payload.xAgentDelayMinSeconds;
-    document.getElementById('xAgentDelayMaxSeconds').value = payload.xAgentDelayMaxSeconds;
+  for (const [minKey, maxKey] of [
+    ['xAgentDelayMinSeconds', 'xAgentDelayMaxSeconds'],
+    ['xAgentBeforeReplyMinSeconds', 'xAgentBeforeReplyMaxSeconds']
+  ]) {
+    let min = Math.min(payload[minKey], payload[maxKey]);
+    let max = Math.max(payload[minKey], payload[maxKey]);
+    if (minKey === 'xAgentBeforeReplyMinSeconds' && min === max) {
+      min = Math.min(min, numericRules[maxKey].max - 1);
+      max = min + 1;
+    }
+    document.getElementById(minKey).value = payload[minKey] = min;
+    document.getElementById(maxKey).value = payload[maxKey] = max;
   }
   // theme сохраняется отдельно — при клике тогглера, чтобы было моментально.
   payload.theme = document.body.dataset.theme;

@@ -864,16 +864,20 @@ function getAgentRunLimit() {
   return Math.max(1, Math.min(20, Math.round(raw)));
 }
 
-function getAgentDelayRange() {
-  const minRaw = Number(STATE.settings && STATE.settings.xAgentDelayMinSeconds);
-  const maxRaw = Number(STATE.settings && STATE.settings.xAgentDelayMaxSeconds);
-  const min = Math.max(5, Math.min(600, Number.isFinite(minRaw) ? Math.round(minRaw) : 30));
-  const max = Math.max(5, Math.min(600, Number.isFinite(maxRaw) ? Math.round(maxRaw) : 90));
-  return min <= max ? { min, max } : { min: max, max: min };
+function getAgentDelayRange([minKey, maxKey] = X_AGENT_BETWEEN_REPLIES, read = key => STATE.settings?.[key]) {
+  const first = normalizeXAgentNumber(minKey, read(minKey));
+  const second = normalizeXAgentNumber(maxKey, read(maxKey));
+  let min = Math.min(first, second);
+  let max = Math.max(first, second);
+  if (minKey === X_AGENT_BEFORE_REPLY[0] && min === max) {
+    min = Math.min(min, X_AGENT_NUMBER_RULES[maxKey].max - 1);
+    max = min + 1;
+  }
+  return { min, max };
 }
 
-function getRandomAgentDelayMs() {
-  const { min, max } = getAgentDelayRange();
+function getRandomAgentDelayMs(keys) {
+  const { min, max } = getAgentDelayRange(keys);
   return (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
 }
 
@@ -1561,11 +1565,15 @@ function setupXAgentDrag(trigger) {
   trigger.addEventListener('pointercancel', finish);
 }
 
+const X_AGENT_BETWEEN_REPLIES = ['xAgentDelayMinSeconds', 'xAgentDelayMaxSeconds'];
+const X_AGENT_BEFORE_REPLY = ['xAgentBeforeReplyMinSeconds', 'xAgentBeforeReplyMaxSeconds'];
 const X_AGENT_NUMBER_RULES = {
   xAgentRunCount: { min: 1, max: 20, fallback: 3 },
   xAgentMemoryLimit: { min: 0, max: 50, fallback: 8 },
   xAgentDelayMinSeconds: { min: 5, max: 600, fallback: 30 },
-  xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 }
+  xAgentDelayMaxSeconds: { min: 5, max: 600, fallback: 90 },
+  xAgentBeforeReplyMinSeconds: { min: 1, max: 600, fallback: 5 },
+  xAgentBeforeReplyMaxSeconds: { min: 1, max: 600, fallback: 10 }
 };
 
 function scheduleXAgentSettingSave(key, value, delay = 250) {
@@ -1595,22 +1603,18 @@ function normalizeXAgentNumber(key, rawValue) {
   return Math.max(rule.min, Math.min(rule.max, value));
 }
 
-function normalizeXAgentDelayPair() {
+function normalizeXAgentDelayPair([minKey, maxKey]) {
   if (!xAgentPanel) return;
-  const minControl = xAgentPanel.querySelector(
-    '[data-x-agent-setting="xAgentDelayMinSeconds"]'
-  );
-  const maxControl = xAgentPanel.querySelector(
-    '[data-x-agent-setting="xAgentDelayMaxSeconds"]'
-  );
+  const minControl = xAgentPanel.querySelector('[data-x-agent-setting="' + minKey + '"]');
+  const maxControl = xAgentPanel.querySelector('[data-x-agent-setting="' + maxKey + '"]');
   if (!minControl || !maxControl) return;
-  let min = normalizeXAgentNumber('xAgentDelayMinSeconds', minControl.value);
-  let max = normalizeXAgentNumber('xAgentDelayMaxSeconds', maxControl.value);
-  if (min > max) [min, max] = [max, min];
+  const { min, max } = getAgentDelayRange([minKey, maxKey], key =>
+    key === minKey ? minControl.value : maxControl.value
+  );
   minControl.value = String(min);
   maxControl.value = String(max);
-  scheduleXAgentSettingSave('xAgentDelayMinSeconds', min, 0);
-  scheduleXAgentSettingSave('xAgentDelayMaxSeconds', max, 0);
+  scheduleXAgentSettingSave(minKey, min, 0);
+  scheduleXAgentSettingSave(maxKey, max, 0);
 }
 
 function bindXAgentSetting(control, key) {
@@ -1622,14 +1626,15 @@ function bindXAgentSetting(control, key) {
     return;
   }
   if (control.type === 'number') {
+    const delayPair = [X_AGENT_BETWEEN_REPLIES, X_AGENT_BEFORE_REPLY].find(pair => pair.includes(key));
     control.addEventListener('input', () => {
       if (control.value.trim() === '') return;
       scheduleXAgentSettingSave(key, normalizeXAgentNumber(key, control.value));
       updateXAgentMemoryHint();
     });
     control.addEventListener('change', () => {
-      if (key === 'xAgentDelayMinSeconds' || key === 'xAgentDelayMaxSeconds') {
-        normalizeXAgentDelayPair();
+      if (delayPair) {
+        normalizeXAgentDelayPair(delayPair);
         return;
       }
       const value = normalizeXAgentNumber(key, control.value);
@@ -1756,8 +1761,10 @@ function createXAgentSettingsSection() {
   const delays = document.createElement('div');
   delays.className = 'dth-x-agent-settings-grid';
   delays.append(
-    createXAgentNumberSetting('xAgentDelayMinSeconds', 'Delay min, sec'),
-    createXAgentNumberSetting('xAgentDelayMaxSeconds', 'Delay max, sec')
+    createXAgentNumberSetting('xAgentDelayMinSeconds', 'Between replies min, sec'),
+    createXAgentNumberSetting('xAgentDelayMaxSeconds', 'Between replies max, sec'),
+    createXAgentNumberSetting('xAgentBeforeReplyMinSeconds', 'Before writing min, sec'),
+    createXAgentNumberSetting('xAgentBeforeReplyMaxSeconds', 'Before writing max, sec')
   );
 
   const prompt = document.createElement('textarea');
@@ -2189,12 +2196,39 @@ async function waitForXReplySubmission(compose, { replyPostId, previousErrors })
   return false;
 }
 
+async function waitBeforeXAgentReply(canContinue, feedRun) {
+  let remaining = getRandomAgentDelayMs(X_AGENT_BEFORE_REPLY);
+  try {
+    while (canContinue()) {
+      xAgentNextReplyMs = remaining;
+      updateXAgentPanel('Waiting before reply');
+      if (feedRun && xAgentPaused) {
+        await sleep(200);
+        continue;
+      }
+      if (remaining <= 0) return true;
+      const started = performance.now();
+      await sleep(Math.min(200, remaining));
+      if (!feedRun || !xAgentPaused) {
+        remaining = Math.max(0, remaining - (performance.now() - started));
+      }
+    }
+    return false;
+  } finally {
+    xAgentNextReplyMs = null;
+    updateXAgentPanel();
+  }
+}
+
 async function runXAgentReply(article, btn, options = {}) {
   if (!STATE.settings || STATE.settings.xAgentEnabled !== true) return;
   if (xRelationshipAutomationRunning && !options.relationshipAuthor) {
     return { ok: false, error: 'Relationship Mode is currently processing an author.' };
   }
-  if (btn && btn.dataset.state === 'thinking') return;
+  const feedRun = options.feedRun === true;
+  if (xAgentActiveJobs > 0 || (xAgentRunning && !feedRun)) {
+    return { ok: false, error: 'Another X reply is already in progress.' };
+  }
 
   xAgentActiveJobs++;
   updateXAgentPanel('Generating reply');
@@ -2209,6 +2243,14 @@ async function runXAgentReply(article, btn, options = {}) {
   const relationshipAuthor = options.relationshipAuthor || trackedXAuthor(postAuthor.handle) || null;
   const recordRelationship = !!relationshipAuthor && options.recordRelationship !== false;
   const preferredCompose = findExistingReplyComposer(article);
+  const relationshipStep = options.relationshipAuthor ? getXRelationshipAutomationStep() : '';
+  const canRun = () => STATE.settings?.xAgentEnabled === true
+    && (!feedRun || !xAgentStopRequested)
+    && (!relationshipStep || (!xRelationshipAutomationStopRequested && getXRelationshipAutomationStep() === relationshipStep));
+  const cancelReply = () => {
+    setAgentButtonState(btn, 'idle');
+    return { ok: false, cancelled: true, tweet: payload };
+  };
   try {
     const postId = getXPostId(payload.url);
     if (!postId) throw new Error('Could not identify the X post to reply to.');
@@ -2221,11 +2263,22 @@ async function runXAgentReply(article, btn, options = {}) {
     const reply = String(resp.reply || '').trim();
     if (!reply) throw new Error('Empty AI reply.');
 
+    if (!canRun()) return cancelReply();
     const target = article.isConnected && getXPostId(getTweetUrl(article)) === postId
       ? article
       : Array.from(document.querySelectorAll(TWEET_SELECTOR)).find(item => getXPostId(getTweetUrl(item)) === postId);
     if (!target) throw new Error('The post is no longer visible. Open it and try again.');
     const compose = await openReplyComposer(target, preferredCompose);
+    const composeUrl = location.href;
+    const originalText = readXComposeText(compose);
+    const canWrite = () =>
+      canRun() && location.href === composeUrl && isAvailableXCompose(compose)
+      && readXComposeText(compose) === originalText;
+    if (!await waitBeforeXAgentReply(canWrite, feedRun)) {
+      if (!canRun()) return cancelReply();
+      throw new Error('The reply editor changed while waiting. Review your draft in X.');
+    }
+    updateXAgentPanel('Writing reply');
     await replaceComposeText(compose, reply);
     if (readXComposeText(compose) !== reply) {
       throw new Error('X did not accept the reply text. Nothing was submitted.');
@@ -2251,6 +2304,7 @@ async function runXAgentReply(article, btn, options = {}) {
       xRelationshipPendingCompose = compose;
       await refreshXRelationshipState();
     }
+    if (!canRun()) return cancelReply();
     const submission = await maybeSubmitReply(
       compose,
       reply,
@@ -2488,6 +2542,7 @@ async function runXRelationshipAutomation() {
       throwOnError: false,
       silent: true
     });
+    if (result?.cancelled) return;
     if (!result?.ok) throw new Error(result?.error || 'AI reply failed.');
     if (!result.sent) throw new Error('Reply was prepared but X did not confirm sending it.');
 
@@ -2771,13 +2826,13 @@ function updateXAgentPanel(statusText) {
     label = 'Paused';
   } else if (xAgentRunning) {
     state = 'running';
-    label = 'Running';
+    label = xAgentActiveJobs > 0 && xAgentNextReplyMs !== null ? 'Waiting before reply' : 'Running';
   } else if (xRelationshipAutomationRunning) {
     state = 'running';
     label = xAgentPanelStatus || 'Relationship running';
   } else if (xAgentActiveJobs > 0) {
     state = 'running';
-    label = 'Generating';
+    label = xAgentPanelStatus || 'Generating';
   } else if (/^done/i.test(label)) {
     state = 'done';
     label = 'Completed';
@@ -2808,6 +2863,7 @@ function updateXAgentPanel(statusText) {
     : `${Math.max(0, xAgentNextReplyMs / 1000).toFixed(1)}s`;
   if (start) {
     start.disabled = xAgentRunning
+      || xAgentActiveJobs > 0
       || xRelationshipAutomationRunning
       || (xRelationshipState.session?.active && xRelationshipState.session.auto === true);
     start.textContent = `▶ Start ${getAgentRunLimit()}`;
@@ -2865,6 +2921,7 @@ function toReportItem(result) {
 
 async function runXFeedAgent() {
   if (xAgentRunning
+    || xAgentActiveJobs > 0
     || xRelationshipAutomationRunning
     || (xRelationshipState.session?.active && xRelationshipState.session.auto === true)
     || !STATE.settings
@@ -2898,7 +2955,8 @@ async function runXFeedAgent() {
       await sleep(650);
 
       const btn = article.querySelector(`.${X_AGENT_BUTTON_CLASS}`);
-      const result = await runXAgentReply(article, btn, { throwOnError: false, silent: true });
+      const result = await runXAgentReply(article, btn, { feedRun: true, throwOnError: false, silent: true });
+      if (result?.cancelled) break;
       attempts++;
       results.push(toReportItem(result));
       if (result && result.ok) done++;

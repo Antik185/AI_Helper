@@ -285,6 +285,22 @@
         <small class="hint-inline">A new random delay is chosen after every sent reply. Maximum: 10 minutes.</small>
       </div>
 
+      <div class="field">
+        <span class="field-label">Random delay before writing a reply</span>
+        <div class="number-pair">
+          <label>
+            <span>Min, sec</span>
+            <input id="xAgentBeforeReplyMinSeconds" class="text-field" type="number" min="1" max="600" step="1" value="5">
+          </label>
+          <span class="number-pair-separator">to</span>
+          <label>
+            <span>Max, sec</span>
+            <input id="xAgentBeforeReplyMaxSeconds" class="text-field" type="number" min="1" max="600" step="1" value="10">
+          </label>
+        </div>
+        <small class="hint-inline">Starts when the reply editor opens. Equal limits are made one second apart.</small>
+      </div>
+
       <button id="startXAgent" class="pp-secondary" type="button">Start X Agent</button>
       <button id="openXAgentReport" class="pp-secondary" type="button">Open last report</button>
       <button id="openRelationshipDashboard" class="pp-secondary" type="button">Open Relationship CRM</button>

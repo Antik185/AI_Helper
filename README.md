@@ -124,7 +124,7 @@ To use it:
 5. Write your agent prompt: tone, length, emojis, and what to avoid.
 6. Set the feed run limit, for example `3` or `10`.
 7. Choose how many saved memory examples are sent with each request. `0` disables memory; higher values increase input-token usage, cost, and response time.
-8. Set a random delay range between `5` and `600` seconds. The default is `30-90` seconds.
+8. Set the random delay between replies (default `30-90` seconds) and the delay before writing in the opened reply editor (default `5-10` seconds).
 9. Open X/Twitter. Posts will get a small `✦ AI` button in the action row.
 10. Hover over `✦ AI` to turn `Auto send` on or off without opening the popup.
 11. Click `✦ AI` to answer one specific post manually. The post is highlighted with a green border, the agent analyzes it, opens the reply composer, and inserts a reply.
@@ -297,7 +297,7 @@ X Reply Agent по умолчанию включён. Его можно в лю�
 5. Напиши prompt для агента: тон, длина ответа, эмодзи и чего избегать.
 6. Укажи лимит прохода по ленте, например `3` или `10`.
 7. Выбери, сколько сохранённых примеров памяти отправлять с каждым запросом. `0` отключает память; большие значения увеличивают расход входных токенов, стоимость и время ответа.
-8. Укажи диапазон случайной задержки от `5` до `600` секунд. По умолчанию используется `30-90` секунд.
+8. Укажи диапазон случайной задержки между ответами (по умолчанию `30-90` секунд) и перед вставкой текста в открытое поле ответа (по умолчанию `5-10` секунд).
 9. Открой X/Twitter. У постов появится маленькая кнопка `✦ AI` в панели действий.
 10. Наведи курсор на `✦ AI`, чтобы включить или выключить `Auto send` без открытия popup.
 11. Нажми `✦ AI`, чтобы вручную ответить на конкретный пост. Пост подсветится зелёной рамкой, агент проанализирует его, откроет reply composer и вставит ответ.

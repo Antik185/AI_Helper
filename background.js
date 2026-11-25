@@ -28,6 +28,8 @@ const DEFAULTS = {
   xAgentMemoryLimit: 8,
   xAgentDelayMinSeconds: 30,
   xAgentDelayMaxSeconds: 90,
+  xAgentBeforeReplyMinSeconds: 5,
+  xAgentBeforeReplyMaxSeconds: 10,
   xAgentPrompt: 'Write a short, natural, friendly reply in English. Sound like a real person, not a bot. Do not overhype. Do not use hashtags unless they are clearly relevant.',
   xRelationshipPrompt: 'Write a short, natural reply that builds genuine rapport with this author. Add a specific useful thought about the post. When it fits naturally, suggest staying connected without directly asking for a follow-back. Avoid repeating earlier wording or invitations.',
   xRelationshipAutoLike: false,

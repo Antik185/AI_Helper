@@ -54,6 +54,7 @@ const X_RELATIONSHIP_MAX_FOLLOWER_PAGES = 1;
 const X_RELATIONSHIP_OWN_REPLIES_CACHE_KEY = 'xRelationshipOwnRepliesCache';
 const X_RELATIONSHIP_OWN_REPLIES_CACHE_MS = 10 * 60 * 1000;
 const CHATGPT_UI_TARGET_KEY = 'chatgptUiTarget';
+const CHATGPT_HELPER_WIDTH = 1024;
 
 let xRelationshipMutationQueue = Promise.resolve();
 let xRelationshipApiRefreshPromise = null;
@@ -1598,6 +1599,63 @@ async function pingChatGPTTab(tab, attempts = 1) {
   return false;
 }
 
+function getChatGPTComposerStatus(tabId, wait = false) {
+  return new Promise(resolve => {
+    const unavailable = {
+      ok: false,
+      error: 'ChatGPT: скрипт расширения не отвечает. Обнови вкладку ChatGPT и повтори настройку 1px.'
+    };
+    const timeout = setTimeout(() => resolve(unavailable), wait ? 9_000 : 2_000);
+    chrome.tabs.sendMessage(tabId, { type: 'chatgpt-composer-status', wait }, { frameId: 0 }, response => {
+      const disconnected = chrome.runtime.lastError;
+      clearTimeout(timeout);
+      resolve(!disconnected && response ? response : unavailable);
+    });
+  });
+}
+
+async function findChatGPTSetupTab(configuredUrl, senderTabId, windowId, preferredId) {
+  const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
+  const previouslyUsed = candidates => candidates.find(tab => tab.id === preferredId);
+  if (configuredUrl) {
+    const matching = tabs.filter(tab => normalizeChatGPTConversationUrl(tab.url) === configuredUrl);
+    return previouslyUsed(matching)
+      || matching.find(tab => tab.windowId === windowId && tab.active)
+      || matching[0]
+      || chrome.tabs.create({ url: configuredUrl, active: false, windowId });
+  }
+
+  const explicit = tabs.find(tab => tab.id === senderTabId)
+    || tabs.find(tab => tab.windowId === windowId && tab.active);
+  if (explicit) return explicit;
+
+  return previouslyUsed(tabs)
+    || tabs.find(tab => tab.windowId === windowId)
+    || tabs[0]
+    || chrome.tabs.create({ url: 'https://chatgpt.com/', active: false, windowId });
+}
+
+function getChatGPTScreenSize(tabId) {
+  return new Promise(resolve => {
+    const timeout = setTimeout(() => resolve(null), 1500);
+    chrome.tabs.sendMessage(tabId, { type: 'get-screen-size' }, { frameId: 0 }, response => {
+      const disconnected = chrome.runtime.lastError;
+      clearTimeout(timeout);
+      resolve(disconnected ? null : response);
+    });
+  });
+}
+
+function normalizeChatGPTScreenBounds(size) {
+  if (!Number.isFinite(size?.width) || size.width < 2 || !Number.isFinite(size.height) || size.height < 1) return null;
+  return {
+    left: Number.isFinite(size.left) ? Math.round(size.left) : 0,
+    top: Number.isFinite(size.top) ? Math.round(size.top) : 0,
+    width: Math.round(size.width),
+    height: Math.round(size.height)
+  };
+}
+
 async function getChatGPTDeviceId() {
   if (chatgptDeviceId) return chatgptDeviceId;
   const stored = await chrome.storage.local.get('chatgptDeviceId');
@@ -1628,7 +1686,10 @@ async function getActiveChatGPTTab(options = {}) {
     const selected = stored[CHATGPT_UI_TARGET_KEY];
     if (selected?.mode === 'tab' && Number.isInteger(selected.tabId)) {
       const selectedTab = tabs.find(tab => tab.id === selected.tabId);
-      if (selectedTab && await pingChatGPTTab(selectedTab)) return selectedTab;
+      if (selectedTab) {
+        if (await pingChatGPTTab(selectedTab, options.ui ? 6 : 1)) return selectedTab;
+        if (options.ui) throw new Error('ChatGPT: выбранная вкладка не отвечает. Обнови её и снова включи 1px Mode.');
+      }
       await chrome.storage.local.remove(CHATGPT_UI_TARGET_KEY);
     }
   }
@@ -1638,7 +1699,10 @@ async function getActiveChatGPTTab(options = {}) {
     || normalizeChatGPTConversationUrl(useConfigured ? await getConfiguredChatGPTConversationUrl() : '');
 
   if (preferredUrl) {
-    let preferredTab = tabs.find(tab => normalizeChatGPTConversationUrl(tab.url) === preferredUrl);
+    const matching = tabs.filter(tab => normalizeChatGPTConversationUrl(tab.url) === preferredUrl);
+    const stored = await chrome.storage.local.get(CHATGPT_UI_TARGET_KEY);
+    const selected = stored[CHATGPT_UI_TARGET_KEY];
+    let preferredTab = matching.find(tab => tab.id === selected?.tabId) || matching[0];
     if (!preferredTab && options.createPreferred !== false) {
       preferredTab = await chrome.tabs.create({ url: preferredUrl, active: false });
     }
@@ -1651,6 +1715,11 @@ async function getActiveChatGPTTab(options = {}) {
 
   if (tabs.length === 0) {
     throw new Error('ChatGPT: для работы необходимо держать хотя бы одну вкладку chatgpt.com открытой.');
+  }
+  if (options.ui) {
+    for (const tab of tabs) {
+      if (!tab.discarded && (await getChatGPTComposerStatus(tab.id)).ok) return tab;
+    }
   }
   for (const tab of tabs) {
     if (await pingChatGPTTab(tab)) return tab;
@@ -1797,7 +1866,7 @@ async function chatgptAsk(prompt, model, sender, forceUi = false, image = null) 
 
     console.warn('[DTH] API fetch failed, falling back to UI Automation...', apiError);
     
-    const tab = await getActiveChatGPTTab();
+    const tab = await getActiveChatGPTTab({ ui: true });
     const originalTabId = sender?.tab?.id;
     const originalWindowId = sender?.tab?.windowId;
 
@@ -1814,8 +1883,8 @@ async function chatgptAsk(prompt, model, sender, forceUi = false, image = null) 
       });
     });
 
-    if (!response.ok) {
-      throw new Error(`ChatGPT UI Automation: ${response.error}`);
+    if (!response?.ok) {
+      throw new Error(`ChatGPT UI Automation: ${response?.error || 'Скрипт вкладки не вернул результат. Обнови выбранный чат.'}`);
     }
 
     const cleanText = cleanAssistantUiText(response.text);
@@ -2738,7 +2807,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'setup-chatgpt-window') {
     (async () => {
       try {
-        let currentWin = await chrome.windows.getLastFocused();
+        const originWindowId = sender?.tab?.windowId ?? msg.originWindowId;
+        const currentWin = Number.isInteger(originWindowId)
+          ? await chrome.windows.get(originWindowId).catch(() => chrome.windows.getLastFocused())
+          : await chrome.windows.getLastFocused();
         const useConfigured = msg.useConfiguredConversation === true;
         let configuredUrl = '';
         if (useConfigured) {
@@ -2749,71 +2821,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         }
 
-        let tab;
-        const senderTabIsChatGPT = /^https:\/\/chatgpt\.com\//i.test(sender?.tab?.url || '');
-        if (!useConfigured && senderTabIsChatGPT) {
-          tab = sender.tab;
-          if (!await pingChatGPTTab(tab, 20)) {
-            throw new Error('ChatGPT: текущая вкладка не отвечает. Обнови её и повтори.');
-          }
-        } else {
-          try {
-            tab = await getActiveChatGPTTab({
-              useConfigured,
-              preferredUrl: configuredUrl,
-              createPreferred: useConfigured
+        const stored = await chrome.storage.local.get(CHATGPT_UI_TARGET_KEY);
+        const selected = stored[CHATGPT_UI_TARGET_KEY];
+        const tab = await findChatGPTSetupTab(configuredUrl, sender?.tab?.id, currentWin?.id, selected?.tabId);
+        const previous = selected?.tabId === tab.id && selected.windowId === tab.windowId ? selected : null;
+        const chatgptWin = previous
+          ? await chrome.windows.get(tab.windowId)
+          : await chrome.windows.create({
+              tabId: tab.id,
+              type: 'normal',
+              width: CHATGPT_HELPER_WIDTH,
+              height: currentWin?.height || 800,
+              focused: false
             });
-          } catch (error) {
-            if (useConfigured) throw error;
-            tab = await chrome.tabs.create({ url: 'https://chatgpt.com/', active: false });
-            if (!await pingChatGPTTab(tab, 20)) {
-              throw new Error('ChatGPT: новая вкладка не успела загрузиться. Обнови её и повтори.');
-            }
-          }
-        }
 
+        const mainWindowId = currentWin?.id !== chatgptWin.id ? currentWin?.id : previous?.mainWindowId;
+        const mainWin = mainWindowId != null ? await chrome.windows.get(mainWindowId).catch(() => null) : null;
+        const workArea = mainWin && (
+          (mainWin.id === originWindowId && normalizeChatGPTScreenBounds(msg.screenBounds))
+          || (mainWin.id === previous?.mainWindowId && normalizeChatGPTScreenBounds(previous.workArea))
+          || normalizeChatGPTScreenBounds(await getChatGPTScreenSize(tab.id))
+          || normalizeChatGPTScreenBounds(mainWin)
+        );
+        const url = configuredUrl || tab.url || 'https://chatgpt.com/';
         await chrome.storage.local.set({
-          [CHATGPT_UI_TARGET_KEY]: useConfigured
-            ? { mode: 'configured', url: configuredUrl, updatedAt: new Date().toISOString() }
-            : { mode: 'tab', tabId: tab.id, url: tab.url || '', updatedAt: new Date().toISOString() }
-        });
-
-        // Узнаем размеры экрана у контент-скрипта
-        const sizeRes = await new Promise(r => {
-          chrome.tabs.sendMessage(tab.id, { type: 'get-screen-size' }, (resp) => {
-            if (chrome.runtime.lastError) r(null); else r(resp);
-          });
-        });
-        
-        const screenW = sizeRes?.width || 1920;
-        const screenH = sizeRes?.height || 1080;
-        
-        // Если основное окно было развернуто, берем его точную высоту, чтобы убрать зазор снизу
-        const exactHeight = (currentWin && currentWin.height && currentWin.state === 'maximized') ? currentWin.height : screenH;
-        const gptWidth = 1; // Микроскопическая ширина (Chrome сам упрется в минимальный лимит ОС)
-
-        // 1. Создаем окно с ChatGPT (тип normal, чтобы не было странных рамок) и ставим его к левому краю
-        const chatgptWin = await chrome.windows.create({
-          tabId: tab.id,
-          type: 'normal',
-          left: 0,
-          top: 0,
-          width: gptWidth,
-          height: exactHeight,
-          focused: false
-        });
-
-        // 2. Растягиваем основное окно, смещая его на 1 пиксель вправо (оставляя зазор слева)
-        if (currentWin && currentWin.id !== chatgptWin.id) {
-          if (currentWin.state === 'maximized' || currentWin.state === 'fullscreen') {
-            await chrome.windows.update(currentWin.id, { state: 'normal' });
-            await new Promise(r => setTimeout(r, 100)); // Ждем, пока снимется максимизация
+          [CHATGPT_UI_TARGET_KEY]: {
+            tabId: tab.id,
+            windowId: chatgptWin.id,
+            mainWindowId: mainWin?.id,
+            workArea,
+            mode: useConfigured ? 'configured' : 'tab',
+            url,
+            updatedAt: new Date().toISOString()
           }
-          await chrome.windows.update(currentWin.id, {
-            left: 1, top: 0, width: screenW - 1, height: exactHeight, focused: true
+        });
+
+        if (chatgptWin.state !== 'normal') await chrome.windows.update(chatgptWin.id, { state: 'normal' });
+        if (mainWin && workArea) {
+          const { left, top, width: screenW, height: screenH } = workArea;
+          const exactHeight = mainWin.state === 'maximized' ? mainWin.height || screenH : screenH;
+          // Keep the editor at a normal viewport width; only the uncovered strip is 1px wide.
+          await chrome.windows.update(chatgptWin.id, {
+            left, top, width: Math.min(CHATGPT_HELPER_WIDTH, screenW), height: exactHeight
           });
+          if (mainWin.state === 'maximized' || mainWin.state === 'fullscreen') {
+            await chrome.windows.update(mainWin.id, { state: 'normal' });
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          await chrome.windows.update(mainWin.id, {
+            left: left + 1, top, width: screenW - 1, height: exactHeight, focused: true
+          });
+        } else {
+          await chrome.windows.update(mainWin?.id ?? chatgptWin.id, { focused: true });
         }
-        sendResponse({ ok: true, url: tab.url || configuredUrl || 'https://chatgpt.com/' });
+        sendResponse({ ok: true, url });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }

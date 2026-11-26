@@ -335,10 +335,17 @@ async function setupChatGPTWindow(useConfiguredConversation = false) {
   btn.textContent = 'Setting up...';
   btn.title = '';
   try {
+    const { id: originWindowId } = await chrome.windows.getCurrent();
+    const screenBounds = {
+      left: window.screen.availLeft, top: window.screen.availTop,
+      width: window.screen.availWidth, height: window.screen.availHeight
+    };
     if (useConfiguredConversation) await save();
     const resp = await chrome.runtime.sendMessage({
       type: 'setup-chatgpt-window',
-      useConfiguredConversation
+      useConfiguredConversation,
+      originWindowId,
+      screenBounds
     });
     if (!resp || resp.ok !== true) throw new Error(resp?.error || 'Could not set up ChatGPT window.');
     btn.textContent = 'Ready';
